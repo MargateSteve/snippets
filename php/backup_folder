@@ -1,0 +1,8 @@
+$folder_to_backup = "/path/to/folder";
+$backup_folder = "/path/to/backup/folder";
+exec("tar -cvf $backup_folder/backupfile.gz $folder_to_backup/* --exclude='$folder_to_backup/*.gz'", $results, $result_value);
+if ($result_value == 0){
+    echo "The archive has been successfully created!";
+} else {
+    echo "Archive creation failed!";
+}
