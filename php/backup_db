@@ -1,0 +1,12 @@
+$mysql_host = "localhost";
+$mysql_user = "username";
+$mysql_pass = "password";
+$mysql_database = "my_database";
+$backup_folder = "/path/to/backup/folder";
+
+exec("mysqldump -h $mysql_host -u $mysql_user -p$mysql_pass $mysql_database  > $backup_folder/my-sql-backup.sql", $results, $result_value);
+if ($result_value == 0){
+    echo "The MySql backup successfully created!";
+} else {
+    echo "MySql backup creation failed!";
+}
