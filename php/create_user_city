@@ -42,3 +42,8 @@ function detect_city($ip) {
         }
         
     }
+
+
+$ip = $_SERVER['REMOTE_ADDR'];
+$city = detect_city($ip);
+echo $city;
