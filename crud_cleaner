@@ -1,5 +1,822 @@
-/app/controllers/Admin/Users.php
---------------------------------------------------------------------------------------------
+Theory 
+
+Forms in Core
+
+Data changing in Model 
+
+Data getting in Core (list, find etc)
+
+
+
+
+
+Users_Model ->process()
+
+self::$_crud_table['name']   -   $this->_crud_table['name']
+
+
+
+Users_Model -->create()
+
+Removed requirement of process() function - need to test front end registration.
+
+
+Users_Model -->update()
+Removed requirement of process() function - front and back tested.
+
+
+Users_Model -->delete()
+Removed requirement of process() function.
+
+
+Users -->details()
+Removed requirement of process() function for ban/unban/verify.group change - replace with Users_Model --> quickUpdate().
+
+
+
+Users_Model -->changePassword()
+Replaced process() function with quickUpdate().
+
+
+Users_Model --> quickUpdate()
+New function for processing just 1 update field with little fuss. Better alternative to process() which is being removed.
+
+
+
+Users_Model -->profile()
+Removed as obsolete.
+
+
+Users_Model -->userMatchesSession()
+Removed as obsolete.
+
+
+
+/views/users/profile.php
+Improved receipt of array
+
+
+/controllers/users/profile.php
+Improved sending of array
+
+
+
+Users_Core
+Multiple improvements
+
+
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+<?php
+
+/**
+ * Demo Admin Model
+ *
+ * This is a fully commented example of of the default admin model for any
+ * table in the database.
+ *
+ * These models contain all the CRUD functions, forms, table and session
+ * information.
+ *
+ * This demo is based on functions around User Groups.
+ *
+ * @package Core
+ * @author  Steve Ball <steve@follyball.co.uk>
+ * @copyright Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
+ *
+ */
+
+// Include the initiation file
+require_once '../app/init.php';
+
+
+class Users_Model extends Users_Core
+{
+	// Set any private variables that can only be accessed within this file
+	private // The session name to be used in flash alerts
+		$_default_session_name = 'Users',
+
+            // Variables that are created in the class
+            $_postdata,
+            $_field,
+            $_errortext,
+            $_errors,
+            $_inputs,
+            $_validate,
+            $_value,
+            $_record;
+
+	// Set any public functionsn that can be accessed globally
+	public  // The button to add to create and update forms
+            $_default_submit_button = 'user_submit'
+            ;
+
+
+	/**
+	 * Create a new record
+	 *
+	 * Collects post data, validates it and inserts it into the database
+	 *
+	 */ 
+	public function create ($params)
+	{
+		/*
+			During the create process, we will validate any posted data to
+			ensure not field rules are being broken.
+
+			This validation returns multiple $keys in an array including the status and any errors.
+
+			We create an empty object called $_validate ready to hold these. Although
+			$_validate->error is primarily used to store the validation error arrays, we can
+			also use it to store a string to describe any non-validation errors that have
+			prevented the create, such as a token mismatch.
+
+			The view checks it $_validate->error is an object and if so, returns the array of
+			errors, otherwise it returns a message based on the string.
+		 */
+		$_validate = (object)array();
+
+		/*
+		    By the time we get to the actual insert part, we only want valid $_POST
+		    data to remain ready for insertion. To achieve this, we unset any
+		    unrequired $_POST data as we go along.
+
+		    Just in case we need to reference any original $_POST data, we set
+		    it to $_postdata, which we then use as the final creation data. It is
+		    this we will unset any unrequired variables from.
+		 */
+		$_postdata = $_POST;
+
+		// Unset the submit button from the $_postdata.
+		unset($_postdata[$this->_default_submit_button]);
+
+		/*
+			If we are in register mode, we need to make sure 'Accept Terms'
+			has been ticked before proceeding.
+
+			If it is not ticked, it will not be sent as part of any $_POST data
+			so we check to see if Input::get('accept_terms') exists.
+
+			If it does we set $_postdata['accept_terms'] to match it, otherwise we
+			set it to 0, which block fail the validation.
+
+			We also unset the submitted button.
+
+			If we are in not in register mode, we just unset the button.
+		 */
+		if ($params['method'] == 'register') {
+
+			unset($_postdata['register']);
+
+			$_postdata['accept_terms'] =  (Input::get('accept_terms')) ? Input::get('accept_terms'): 0;
+		} 
+		else 
+		{
+			// Unset the submit button from the $_postdata.
+			unset($_postdata[$this->_default_submit_button]);
+		}
+
+		/*
+			The forms all have .req-token to prevent double-posting on page
+			refresh. This generates a new $_SESSSION['token'] value and also
+			adds a hidden form element containing the $_SESSSION['token'].
+
+			We need to check that the posted token matches the current $_SESSSION['token']
+			and only proceed if it does.
+		 */
+		if(!Token::check(Input::get('token')))
+		{
+			// The token check failed so set the errors to 'token'
+			$_validate->error = 'token';
+
+		}
+		else
+		{
+			/*
+				The token check is succesful, so we again unset that from the $_postdata,
+				to ensure we only have valid insert data left.
+			 */
+			unset($_postdata['token']);
+
+			/*
+				Now $_postdata should contain only $_POST data from the actual input
+				fields.
+
+				If there is data left, we attempt to validate and insert it.
+			 */
+			if(!empty($_postdata))
+			{
+				/*
+					There is $_postdata so we attempt to validate it.
+
+					The validation for this form is held in $_default_form_fields in the __Core class
+					so we pass this into Form_Functions::postValidate(), along with the $_postdata and
+					this checks each field in $_postdata against it's relevant validation if it exists.
+
+					the function returns a boolean 'status' as to
+					whether validation was passed.
+
+					If validation failed, it will also contain any validation errors
+					that have been generated.
+				 */
+				$_validate = Form_Functions::postValidate($_postdata, self::$_default_form_fields);
+				
+				/*
+					One of the keys returned by postValidate() is 'status'. This is a boolean which simply states whether the validation was successful or not.
+
+					If $_validate->status is true, validation passed and we can attempt the insert, otherwise we do nothing and the view will show the errors that are return at the bottom of this function
+				 */
+				if($_validate->status)
+				{	
+					/*
+						$_validate->status has returned true so all is ok so attempt the insert.
+
+						We do things slightly differently between front-end registration and backend creation so check the 'method' passed in 
+						with $params.
+					*/
+					if ($params['method'] == 'register') {
+						
+						// We no longer need 'confirm_password' and 'accept_terms' so unset them
+						unset($_postdata['confirm_password']);
+						unset($_postdata['accept_terms']);
+						
+						// By default we want new members to be 'Standard Users' so we set the group to 1.
+						$_postdata['group'] = 1;
+						
+						 /*
+							If the verify_registration setting is set to false, the user has to
+							verify their account be email so for now we set the status to 0.
+
+							If it is set to true, we have automatic verification so we set it to 1.
+
+						 */
+						 $_postdata['status'] = (Globals::get('settings/verify_registration')) ? 0 : 1;
+						 
+						 /*
+							As the login process requires password hashing to check against the already hashed password
+							in the database, we add a salt to $_postdata and then use that same salt to hash the posted password
+							amend the 'password' record in $_postdata.
+						 */
+						$_postdata['salt'] = Hash::salt(32);
+						$_postdata['password'] = Hash::make(Input::get('password'), $_postdata['salt']);
+
+						// Finally add the joined date to $_postdata using the current timestamp
+						$_postdata['joined'] = date('Y-m-d H:i:s');
+					}
+					
+					if ($params['method'] == 'admin') {
+						
+						// We no longer need 'confirm_password' so unset it
+						unset($_postdata['confirm_password']);
+						
+						/*
+							In admin mode (or non-verification registration mode) we set the status to active (1)
+							and the user group to 'Standard User' (1) so we add these to the $_postdata
+						 */
+						$_postdata['status'] = 1;
+						$_postdata['group'] = 1;
+						
+						 /*
+							As the login process requires password hashing to check against the already hashed password
+							in the database, we add a salt to $_postdata and then use that same salt to hash the posted password
+							amend the 'password' record in $_postdata.
+						 */
+						$_postdata['salt'] = Hash::salt(32);
+						$_postdata['password'] = Hash::make(Input::get('password'), $_postdata['salt']);
+
+						// Finally add the joined date to $_postdata using the current timestamp
+						$_postdata['joined'] = date('Y-m-d H:i:s');
+					}
+					
+					// By this stage, $_postdata only contains the correct data to insert so attempt it.
+					if (!self::db ()->insert($this->_crud_table['name'], $_postdata))
+					{
+						// The insert was unsuccesful
+						throw new Exception('There was a problem creating an account!');
+
+						// Flash a generic error message
+						$this->crudFlash ('generic_error');
+
+						return false;
+					}
+					else
+					{
+						/*
+							If we have set it so that registrations have to be verified by email,process that
+						 */
+						if(Globals::get('settings/verify_registration') &&  $params['method'] == 'register')
+						{
+							// Save the email to a variable
+							$email = Input::get('email');
+
+							/*
+							   Create a hash to place in the user_hash table
+							   along with the email. These are the two
+							   things that are passed in the verify link to
+							   check against
+							 */
+							$hash = Hash::unique();
+
+							// Send the email
+							$this->sendVerifyMail ($email, $hash);
+							
+						} // Send verify email
+						
+					} // Insert attempt
+					
+				}  // if($validate->status)
+				
+			} // empty($_postdata) check
+			
+		} // Token::check()
+		
+		// Return any validation errors if they have been set
+		return (isset($_validate->error)) ? $_validate->error : null;
+
+	} // create()
+	
+	/**
+	 *	Change a users password
+	 *
+	 *	Creates a new salt and hashed password and updates a users 
+	 *	record with them.
+	 *
+	 *	@params 	int		$user		User ID
+	 **/
+	public function changePassword ($user)
+    	{
+		// We always use validation as an object so we do this for constency
+		$_validate = (object)array();
+		
+		// Place the $_POST data into a variable that will get manipulated.
+		$_postdata = $_POST;
+		
+		/*
+			The forms all have .req-token to prevent double-posting on page
+			refresh. This generates a new $_SESSSION['token'] value and also
+			adds a hidden form element containing the $_SESSSION['token'].
+
+			We need to check that the posted token matches the current $_SESSSION['token']
+			and only proceed if it does.
+		 */
+		if(!Token::check(Input::get('token')))
+    		{
+    			// The token check failed so set the errors to 'token'
+    			$_validate->error = 'token';
+
+    		}
+    		else
+    		{	
+			/*
+				The token check is succesful, so we again unset that from the $_postdata array, along with the 
+				submit button, to ensure we only have insert data left.
+			*/
+			unset($_postdata->token);
+			unset($_postdata->reset_password_submit);
+
+			/*
+				We now attempt to validate the contents of $_postdata.
+
+				The validation for this form is passed directly into Form_Functions::postValidate(), along with the $_postdata and
+				this checks each field in $_postdata against it's relevant validation if it exists.
+
+				The function returns a boolean 'status' as to  whether validation was passed. If validation failed, it will also contain any 
+				validation errors that have been generated.
+			 */
+			$_validate = Form_Functions::postValidate($_postdata,
+			array (
+			    'password' => array(
+				'validation' => array(
+				    'required' => true,
+				    'min' => 6
+				),
+			    ),
+			    'confirm_password' => array(
+				'type' => 'password',
+				'error' => 'You must enter a confirmation password that matches the password',
+				'validation' => array(
+				    'required' => true,
+				    'matches' => 'password'
+				),
+			    ))
+			);
+
+			if($_validate->status)
+			{
+				// Create a new salt
+				$salt = Hash::salt(32);
+				
+				/*
+					The original $_postdata -> password cannot be entered as it is a raw string of readable data.
+					
+					We replace this with a hashed password, generated using the salt we just created and also create 
+					a new element in $_postdata with the salt as when logging in, we will need the updated salt to match
+					the stored, hashed, password.
+				*/
+				$_postdata = array(
+				'password' => Hash::make(Input::get('password'), $salt),
+				'salt' => $salt
+				);
+					
+				// Now we have the correct $_postdata so use quickUpdate() to process it.
+				$this->quickUpdate($user, $_postdata);
+			}
+		}
+		
+		// Return any errors
+		return (isset($_validate->error)) ? $_validate->error : false ;
+    	} // changePassword()
+
+	/**
+         * Delete a record
+         *
+         *  Deletes the specified record from $this->_crud_table['name']
+         *
+         * @param  int  $record  Record ID
+         */
+	public function delete ($record)
+	{
+		// We do not have to unset, add or amend anything so purely run the delete
+			if(!self::db ()->delete($this->_crud_table['name'], array('id', '=', $record)))
+			{
+				// The update was unsuccesful
+				throw new Exception('There was a problem updating the account!');
+				// Flash a generic error message
+				$this->crudFlash ('generic_error');
+
+				return false;
+			}
+
+	} // delete ()
+	
+	 /**
+	 * Check if a record exists
+	 *
+	 *	Checks to see if $this->data() exists following a find()
+	 *
+	 *	TODO: Long term, this may be redundant
+	**/
+	public function exists ()
+	{
+	   return ($this->data()) ? true : false;
+	} // exists ()
+	
+	/**
+         * Return a list of Records
+         *
+         * @return array  List of Records
+         */
+	public function listing ()
+	{
+		// Select all records from the database
+		$list = self::db ()->query('SELECT
+		*
+		FROM `' . $this->_crud_table['name'] . '`'
+		);
+
+		// Return the results as an array
+		return $list->results();
+	} // listing ()
+    
+	/**
+	 *	Perform a simple update on a record
+	 *
+	 * 	This performs a quick update on a record when a minimal number of fields are being updated OR 
+	 *	validation is not required/has already been performed.
+	 *
+	 *	This will be particularly useful for changing user levels or banning/unbanning users.
+	 *
+	 **/
+	public function quickUpdate ($_refdata, $_postdata) 
+	{
+		if (!self::db ()->update($this->_crud_table['name'], $_refdata, $_postdata))
+		{
+			
+			// The update was unsuccesful
+			throw new Exception('There was a problem updating the account!');
+			// Flash a generic error message
+			$this->crudFlash ('generic_error');
+
+			return false;
+		}
+		
+		return true;
+	}
+	
+	/**
+         * Update a record
+         *
+         * Collects post data, validates it and updates specified record
+         * in the $this->_crud_table['name']
+        *
+         * @param  int  $record  Record ID
+         */
+	public function update($record=null, $admin=true)
+	{	
+		/*
+			During the update process, we will validate any posted data to
+			ensure no field rules are being broken.
+
+			This validation returns multiple keys in an array including the status and any errors.
+
+			We create an empty object called $_validate ready to hold these. Although
+			$_validate->error is primarily used to store the validation error arrays, we can
+			also use it to store a string to describe any non-validation errors that have
+			prevented the create, such as a token mismatch, a not found record or posted
+			data not being different to existing data.
+
+			The view checks it $_validate->error is an object and if so, returns the array of
+			errors, otherwise it returns a message based on the string.
+		 */
+		$_validate = (object)array();
+
+		/*
+			By the time we get to the actual update part, we only want valid $_POST
+			data to remain ready for updating. To achieve this, we unset any
+			unrequired $_POST data as we go along.
+
+			Just in case we need to reference any original $_POST data, we set
+			it to $_postdata, which we then use as the final update data. It is
+			this we will unset any unrequired variables from.
+		 */
+		$_postdata = $_POST;
+
+		// Unset the submit button from the $_postdata.
+		unset($_postdata[$this->_default_submit_button]);
+
+
+		/*
+			The forms all have .req-token to prevent double-posting on page
+			refresh. This generates a new $_SESSSION['token'] value and also
+			adds a hidden form element containing the $_SESSSION['token'].
+
+			We need to check that the posted token matches the current $_SESSSION['token']
+			and only proceed if it does.
+		 */
+		if(!Token::check(Input::get('token')))
+		{
+			// The token check failed so set the errors to 'token'
+			$_validate->error = 'token';
+
+		}
+		else
+		{
+			/*
+				The token check is succesful, so we again unset that from the $_postdata,
+				to ensure we only have valid insert data left.
+			 */
+			unset($_postdata['token']);
+
+
+			/*
+				We now use the record details to check against the $_postdata
+
+				This helps us to check which fields are actually being changed and only process, validate and only update those.
+
+				The name="" attribute of each of the form fields matches the respective column name to allow this.
+
+				We loop through $_postdata and for each we check them against the respective existing data and if they match, unset the $_postdata record.
+
+				This will avoid errors with fields that have to be unique and also should be faster as we are only actually processing changed data.
+			*/
+			foreach ($_postdata as $key => $value)
+			{
+				/*
+					Check the posted data against existing values
+
+					Checks the value of the input and checks the corresponding record
+					in the table to see it has changed. If not, it will unset it.
+				*/
+				if($value && $value == $this->data()->$key)
+				{
+					// The posted value matches the database field value so unset it
+					unset($_postdata[$key]);
+				}
+
+			} // End foreach loop
+
+
+			/*
+				Now $_postdata should contain only $_POST data from the actual input
+				fields.
+
+				If there is data left, we attempt to validate and insert it.
+			 */
+			if(!empty($_postdata))
+			{
+				/*
+					There is $_postdata so we attempt to validate it.
+
+					The validation for this form is held in $_default_form_fields in the __Core class
+					so we pass this into Form_Functions::postValidate(), along with the $_postdata and
+					this checks each field in $_postdata against it's relevant validation if it exists.
+
+					the function returns a boolean 'status' as to
+					whether validation was passed.
+
+					If validation failed, it will also contain any validation errors
+					that have been generated.
+				 */
+				$_validate = Form_Functions::postValidate($_postdata, self::$_default_form_fields);
+
+				/*
+					One of the keys returned by postValidate() is 'status'. This is a boolean which simply states whether the validation was successful or not.
+
+					If $_validate->status is true, validation passed and we can attempt the insert, otherwise we do nothing and the view will show the errors that are return at the bottom of this function
+				 */
+				if($_validate->status)
+				{
+					/*
+						$_validate->status has returned true so all is ok so attempt the insert.
+
+						We do this using the process() function, passing in 'update'
+						as the method along with the $_postdata and the record id.
+					*/
+					// We do not have to unset, add or amend any $_postdata so can go straight into the update
+					if (!self::db ()->update($this->_crud_table['name'], $record->id, $_postdata))
+					{
+						// The update was unsuccesful
+						throw new Exception('There was a problem updating the account!');
+						// Flash a generic error message
+						$this->crudFlash ('generic_error');
+
+						return false;
+					}
+					else
+					{
+						/*
+							If we have changed the 'username' field, the url will no longer work
+							as it is looking for the old name.
+
+							We check to see if the username still exists in _postdata and if so, if it matches
+							the original name.
+
+							If it does we re-direct to the edit page of the new username.
+						 */
+
+						if($admin)
+						{
+							if(isset($_postdata['username']) && $_postdata['username'] !== $record->username)
+							{
+								/*
+									As we are redirecting to a new page, it will not pick up the $data posted to
+									the view so we set a flash alert that will be picked up there.
+								 */
+								Bootstrap::flashAlert(
+									$variable = $this->_default_class_name,
+									$color = 'success',
+									$heading = $this->_default_title . ' updated!',
+									$body = 'The ' . $this->_default_title . ' was successfully updated.',
+									$dismissible=true
+								    );
+
+								Redirect::to ($this->_default_controller_path . 'Edit/' . $_postdata['username']);
+							}
+
+						} // Admin username redirect checks
+
+					}
+
+				}  // if($validate->status)
+
+			}
+			else
+			{
+				/*
+				    There is no $_postdata so it can only be that a form was posted with no
+				    changed data so set the errors to 'nochange'
+				 */
+				$_validate->error = 'nochange';
+
+			} // empty($_postdata) check
+
+		} // Token::check()
+
+		// Return any validation errors if they have been set
+		return (isset($_validate->error)) ? $_validate->error : false ;
+
+	} // update ()
+	
+
+
+
+
+
+
+
+
+       
+
+	
+	
+	###############################################################################
+	#  Rewrite once below moved to another model
+	###############################################################################
+	
+	    /**
+     * Send registration verification email
+     *
+     * This function sends the verification email using SendMail::registration()
+     * and puts a matching record in the user_hash table
+     *
+     * @param  email 	$email 		Users email address
+     * @param  sha256 	$hash  		Hash string
+     */
+    protected function sendVerifyMail ($email, $hash)
+    {
+        // Insert the email and has as a record in user_hash
+        try {
+            $this->createUserHash(array(
+            'email' => $email,
+            'hash' => $hash,
+            'stamp' => date('Y-m-d H:i:s')
+            ));
+            // Send the registration email
+            SendMail::registration($email, $hash);
+        } catch(Exception $e) {
+        die();
+        }
+
+    } // sendVerifyMail ()
+    
+
+
+	###############################################################################
+	#  To be moved to another model
+	###############################################################################
+
+	
+    /**
+   	 * Creates a record in the user_hash table
+   	 *
+   	 * Whenever a user has to verify by email, the link they are
+   	 * sent will contain their email address and a hash string that
+   	 * matches a row in the user_hash table.
+   	 *
+   	 * This is to ensure a valid request has been used.
+   	 *
+   	 * @param  array 	$_fields 	Email and Hash
+   	 */
+    public function createUserHash($_fields)
+   	{
+        if (!$this->db ()->insert('user_hash', $_fields)) {
+            throw new Exception('There was a problem creating an account!');
+        }
+    } // createUserHash ()
+    
+    
+    
+        /**
+    	 * Delete the user hash
+    	 *
+    	 * Deletes an email/hash combination row from the
+    	 * user_hash table
+    	 *
+    	 * @param  email 	$email 	Users Email address
+    	 * @param  sha256 	$hash  	Stored hash
+    	 */
+    	public function deleteUserHash ($email, $hash=null)
+    	{
+    		$sql = "DELETE FROM user_hash WHERE email = ?";
+    		$array[] = $email;
+    		if($hash) {
+    			$sql .= " AND hash = ?";
+    			$array[] = $hash;
+    		}
+    		return self::db ()->query($sql, $array);
+    	}
+
+
+
+	###############################################################################
+	#  Probably deprecated
+	###############################################################################
+	
+    /**
+        *  Create a Session::flash message for crud functions
+        *
+        * @param  string 	$type    The type of message we are setting
+        * @param  string 	$text    Additional alert body text
+        * @return $_SESSION variabloe containing a Bootstrap alert
+        *
+        */
+       public function crudFlash ($type, $text=null)
+       {
+           Form_Functions::crudAlert ($this->_default_title, $this->_default_session_name, $type, $text);
+
+       } // crudFlash ()
+
+
+}
+
+
+
+
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
 <?php
 
 /**	Demo Admin Controller
@@ -37,7 +854,7 @@ class Users extends Controller
 	 * as this will be used in every method.
 	 *
 	 * We also create a second variable '$this->table_rules' which pulls in the list
-	 * table rules via tableData() in the XXX_Core class (accessed via XXX_Model)
+	 * table rules via _crud_table() in the XXX_Core class (accessed via XXX_Model)
 	 *
 	*/
 	public function __construct ()
@@ -45,9 +862,349 @@ class Users extends Controller
 		// Model
 		$this->_default_model = $this->model($this->_default_model_name);
 
-		
-
 	} // __construct ()
+
+	/**
+	 * Create a Record
+	 *
+	 * Displays the default form in insert mode (unpopulated, checks if the form has been posted and if so, populates it with any required 
+	 * data and validation.
+	 *
+	 * @return 	view
+	 */
+	public function create()
+	{
+		/*
+			We use $_errors to store any validation errors that may come from form posting. In create mode, that is the ony type of error we will recieve.
+
+			$_errors is passed to the view as 'errors' but is only read there when $_posted = true to denote there has been a create attempt.
+
+			If there has been a create attempt, if it returned any validation or token errors these will be passed to $_errors  and then the relevant info will be shown in the view. In the case of validation errors, it will also set validation classes on the form fields.
+
+			If there has been a create attempt and no validation errors  have been generated, this will remain null and the view will show a message that the create has been successful.
+
+			We set it to null initially and only populate it if required.
+		*/
+		$_errors = null;
+
+		/*
+			The view page is set-up to only look for errors or show a create success message if the form has been posted. To do this we pass $_posted to the view as 'posted'.
+
+			If it exists, the view will then check to see if there are any errors. If there are, it will show them, otherwise it is safe to assume that the create has been successful so will show a success message.
+
+			No messages will be shown in the view if $_posted remains false.
+
+			We set it to null initially and only populate it if required.
+		*/
+		$_posted = false;
+
+		/*
+			Check for a form post
+
+			We check to see if there is $_POST instance of the default submit button (set in the model).
+
+			If there is, the first thing we do is set $_posted to true. This will tell the view that we will have some form of message, either errors io a success one,.
+
+			We then attempt to create a new record using the create() function with a method of 'admin' passed in. This tells the create script that it is a 
+			backend create as opposed to a front end registration so we automatically verify the account and do not send the email.
+
+			There will be a validation attempt in the create() function so we assign any errors it returns to $_errors ready for displaying as well as setting validation classes on the form fields if required.
+		 */
+		if(null !== Input::get($this->_default_model->_default_submit_button))
+		{
+			$_posted = true;
+			$_errors = $this->_default_model->create(array('method' => 'admin'));
+
+		} // if posted
+
+		/*
+			Pass the data to the view.
+
+			As well as the page name and page type, we the pre-populated form to
+			the page and a 'page_type' just so the view knows what we are doing.
+		*/
+		$this->view(
+			'/admin/create',
+			[
+				// Pass the page title - this is set as $_default_title in the __Core class
+				'page_title' => $this->_default_model->_default_title,
+
+				// Pass in the posted status - this tells the view that the form has been posted and may require a message to be show
+				'posted' => $_posted,
+
+				// Pass the class name to automatically call the correct model and core classes
+				'class' => $this->_default_model->_default_class_name,
+
+				// Pass in any errors that have been set
+				'errors' => $_errors
+			]
+		);
+	} // create ()
+
+	/**
+	 * Delete a Record
+	 *
+	 * Shows a warning that the record will be deleted permanently.
+	 * If processed it deletes the record.
+	 *
+	 * @param  int/string   $record     Record Identifier
+	 * @param  string       $confirm    Confirms the wish to delete
+	 * @return 	view
+ 	 * @link 	http://site.com/Admin/Users/Groups/Delete/{xxx}
+	 */
+	public function delete($record=null, $confirm=null)
+	{
+		// Set errors initially to null
+		$_errors = null;
+		$status = 'warn';
+
+		// Check the record exists.
+		if(!$this->_default_model->find($record))
+		{
+			// The record is not set so flash the message
+			$_errors = 'notfound';
+
+		} else
+		{
+			/*
+				The record does exist so set a flash alert containing a pre-delete
+				warning along with a link to confirm the deletion.
+			*/
+
+
+			// Check to see if the delete request has been confirmed
+			if($confirm)
+			{
+				$status = 'process';
+				//The confirm does exist so delete the record using the default delete () function.
+
+				$this->_default_model->delete($this->_default_model->data()->id);
+			} // if($confirm)
+
+        } // if(!$groups->find($group))
+
+        /*
+            Pass the data to the view.
+
+            We only send the page name and page type as everything is stored in
+            flash alerts.
+        */
+        $this->view(
+            '/admin/delete',
+            [
+                'page_title' => $this->_default_model->_default_title,
+                'status' => $status,
+                'class' => $this->_default_model->_default_class_name,
+                'record' => $record,
+                'errors' => $_errors
+
+            ]
+        );
+    } // delete ()
+
+    /**
+     * Show a records details
+     *
+     * The details view for Users is a lot more complex than any others
+     * as the view also contains the option to ban, unban and verify a
+     * user as well as changing their user group.
+     *
+     * @param  int/string   $record     Record Identifier
+     * @return 	view
+     */
+    public function details($record=null)
+    {   # Move these to top of class. If it works, see where else it can be done.
+        // Set errors and data initially to null
+        $_data = null;
+        $_errors = null;
+        $_status = null;
+        $_posted = null;
+
+        /*
+            If no record has been set, we do nothing other than flash a
+            message, otherwise we check the group exists.
+         */
+        if(!$this->_default_model->find($record))
+        {
+            // The record is not set so flash the message
+             $_errors = 'notfound';
+
+        } else
+        {
+            /*
+                As we can ban, unban, verify a user and change their usergroup from the
+                details page, we need to check if any of these have been attempted.The
+                default_submit_button post data contains the name of the method that has
+                been posted.
+
+                If they have we set $_posted to true to tell showDetailsAdmin() that we
+                have update information to display.
+
+                Each of these use the process() function with 'update' as a parameter and we
+                pass in the field to update and the value to update it with. We do this by
+                running a switch statement on the button value.
+
+                We also create a $_status variable topass to tch tells showDetailsAdmin()
+                which update details to show.
+
+             */
+
+		if(null !== Input::get($this->_default_model->_default_submit_button))
+    		{
+			// An update has been made so set $_posted to true
+				$_posted = true;
+
+			switch (Input::get($this->_default_model->_default_submit_button))
+			{
+			    case 'unban':
+				$update_field = 'status';
+				$update_value = '1';
+				$_status = 'unbanned';
+				break;
+
+			    case 'ban':
+				$update_field = 'status';
+				$update_value = '-1';
+				$_status = 'banned';
+				break;
+
+			    case 'verify':
+				$update_field = 'status';
+				$update_value = '1';
+				$_status = 'verified';
+				break;
+
+			    case 'change_level':
+				$update_field = 'group';
+				$update_value = Input::get('user_level');
+				$_status = 'change_level';
+				break;
+
+			}
+
+
+
+                /*
+                    Process the requested updare and then re-run find() to pick up the changed data.
+                 */
+                if($this->_default_model->quickUpdate($this->_default_model->data()->id, array($update_field => $update_value))) {
+
+                    $this->_default_model->find($record);
+                }
+
+            } // if posted
+
+
+
+            /*
+                The record exists so set the $_data parameter that is passed
+                into the form to populate it.
+             */
+            $_data = $this->_default_model->data();
+
+        }
+
+        $this->view(
+            '/admin/view',
+            [
+                // Pass the page title - this is set as $_default_title in the __Core class
+                'page_title' => $this->_default_model->_default_title,
+
+                // Pass the data of the record
+                'record' => $_data,
+
+                // Pass the class name to automatically call the correct model and core classes
+                'class' => $this->_default_model->_default_class_name,
+
+                // Pass in the posted status - this tells the view that the form has been posted and may require a message to be show
+                'posted' => $_posted,
+
+                // Pass in the status of any update records
+                'status' => $_status,
+
+                // Pass in any errors that have been set
+                'errors' => $_errors
+            ]
+
+        );
+    } // details()
+
+    /**
+     * Edit a Record
+     *
+     * Displays the default form in update mode, checks if the
+     * form has been posted and populates it with any required
+     * data and validation.
+     *
+     * @param  int/string   $group  Group Identifier
+     * @return 	view
+     * @link 	http://site.com/Admin/Users/Groups/Edit/{xxx}
+     */
+    public function edit($record=null)
+    {
+
+        // Set errors and data initially to null
+        $_errors = null;
+        $_data = null;
+        $_posted = false;
+
+        /*
+            If no record has been set, we do nothing other than flash a
+            message, otherwise we check the group exists.
+         */
+        if(!$this->_default_model->find($record))
+        {
+            // The record is not set so flash the message
+             $_errors = 'notfound';
+
+        } else
+        {
+
+            /*
+                The record exists so set the $_data parameter that is passed
+                into the form to populate it.
+             */
+            $_data = $this->_default_model->data();
+
+
+    		/*
+    			If the update form has been posted, then attempt to update the record
+    			by using update().
+    		*/
+    		if(null !== Input::get($this->_default_model->_default_submit_button))
+    		{
+    			$_posted = true;
+    			$_errors = $this->_default_model->update($_data);
+
+            } // if posted
+
+            if (Input::get('reset_password_submit')) {
+                echo 'submit';
+                // An update has been posted so process it, passing any returned errors to $update
+                $_posted = true;
+                $_status = 'password';
+                $_errors = $this->_default_model->changePassword($this->_default_model->data()->id);
+            }
+        }
+
+        /*
+            Pass the data to the view.
+
+            As well as the page name and page type, we send a 'group' containing these
+            groups data to populate the form.
+        */
+        $this->view(
+            '/admin/edit',
+            [
+                'page_title' => $this->_default_model->_default_title,
+                'record' => $_data,
+                'posted' => $_posted,
+                'class' => $this->_default_model->_default_class_name,
+                'errors' => $_errors
+            ]
+        );
+    } // edit ()
+
 
 	/**
 	 * Shows a listing of records in a table
@@ -61,10 +1218,10 @@ class Users extends Controller
 	*/
 	public function listing()
 	{
-		
+
 		// List Table Rules
-		$this->table_rules = $this->_default_model->tableData ();
-		
+		$this->table_rules = $this->_default_model->_crud_table;
+
 		/*
 			The listing() function in the default model will return an array of all the records
 			in the specified database table.
@@ -140,6 +1297,7 @@ class Users extends Controller
 		$this->view(
 			'admin/list',
 			[
+                // Pass the page title - this is set as $_default_title in the __Core class
 				'page_title' => $this->_default_model->_default_title,
 
 				// Pass the class name to automatically call the correct model and core classes
@@ -160,226 +1318,14 @@ class Users extends Controller
 
 
 
-	/**
-	 * Create a Record
-	 *
-	 * Displays the default form in insert mode (unpopulated, checks if the
-	 * form has been posted and if so, populates it with any required data
-	 * and validation.
-	 *
-	 * @return 	view
-	*/
-	public function create()
-	{
-		/*
-			We use $_errors to store any validation errors that may come from form posting. In create mode, that is the ony type of error we will recieve.
-			
-			$_errors is passed to the view as 'errors' but is only read there when 
-			$_posted = true to denote there has been a create attempt.
-			
-			If there has been a create attempt, if it returned any validation or token errors
-			these will be passed to $_errors  and then the relevant info will be shown in the view. In the 
-			case of validation errors, it will also set validation classes on the form fields.
-			
-			If there has been a create attempt and no validation errors  have been generated, this 
-			will remain null and the view will show a message that the create has been successful.
-			
-			We set it to null initially and only populate it if required.
-		*/
-		$_errors = null;
-
-		/* 
-			The view page is set-up to only look for errors or show a create success message if the 
-			form has been posted. To do this we pass $_posted to the view as 'posted'.
-			
-			If it exists, the view will then check to see if there are any errors. If there are, it will show them,
-			otherwise it is safe to assume that the create has been successful so will show a success 
-			message.
-			
-			No messages will be shown in the view if $_posted remains false.
-			
-			We set it to null initially and only populate it if required.
-		*/
-		$_posted = false;
-
-		/*
-			Check for a form post
-
-			We check to see if there is $_POST instance of the default submit button (set in the model).
-
-			If there is, the first thing we do is set $_posted to true. This will tell the view that we will have 
-			some form of message, either errors io a success one,.
-			
-			We then attempt to create a new record. There will be a validation attempt in the 
-			create() function so we assign any errors it returns to $_errors ready for displaying  as well as 
-			setting validation classes on the form fields if required.
-		 */
-		if(null !== Input::get($this->_default_model->_default_submit_button))
-		{
-			$_posted = true;
-			$_errors = $this->_default_model->create();
-
-		} // if posted
-
-		/*
-			Pass the data to the view.
-
-			As well as the page name and page type, we the pre-populated form to
-			the page and a 'page_type' just so the view knows what we are doing.
-		*/
-		$this->view(
-			'/admin/create',
-			[
-				// Pass the page title - this is set as $_default_title in the __Core class
-				'page_title' => $this->_default_model->_default_title,
-				
-				// Pass in the posted status - this tells the view that the form has been posted and may require a message to be show
-				'posted' => $_posted,
-				
-				// Pass the class name to automatically call the correct model and core classes
-				'class' => $this->_default_model->_default_class_name,
-				
-				// Pass in any errors that have been set
-				'errors' => $_errors
-			]
-		);
-	} // create ()
-
-    /**
-     * Delete a Record
-     *
-     * Shows a warning that the record will be deleted permanently.
-     * If processed it deletes the record.
-     *
-     * @param  int/string   $record     Record Identifier
-     * @param  string       $confirm    Confirms the wish to delete
-     * @return 	view
- 	 * @link 	http://site.com/Admin/Users/Groups/Delete/{xxx}
-     */
-    public function delete($record=null, $confirm=null)
-    {
-        // Set errors initially to null
-        $_errors = null;
-        $status = 'warn';
-
-        // Check the record exists.
-        if(!$this->_default_model->find($record))
-        {
-            // The record is not set so flash the message
-             $_errors = 'notfound';
-
-        } else
-        {
-            /*
-                The record does exist so set a flash alert containing a pre-delete
-                warning along with a link to confirm the deletion.
-             */
-
-
-            // Check to see if the delete request has been confirmed
-            if($confirm)
-            {
-                $status = 'process';
-                /*
-                    The confirm does exist so delete the record using the default delete () function.
-                 */
-		
-                $this->_default_model->delete($this->_default_model->data()->id);
-
-
-            } // if($confirm)
-
-        } // if(!$groups->find($group))
-
-        /*
-            Pass the data to the view.
-
-            We only send the page name and page type as everything is stored in
-            flash alerts.
-        */
-        $this->view(
-            '/admin/delete',
-            [
-                'page_title' => $this->_default_model->_default_title,
-                'status' => $status,
-                'class' => $this->_default_model->_default_class_name,
-                'record' => $record,
-                'errors' => $_errors
-
-            ]
-        );
-    } // delete ()
-
-    /**
-     * Edit a Record
-     *
-     * Displays the default form in update mode, checks if the
-     * form has been posted and populates it with any required
-     * data and validation.
-     *
-     * @param  int/string   $group  Group Identifier
-     * @return 	view
-     * @link 	http://site.com/Admin/Users/Groups/Edit/{xxx}
-     */
-    public function edit($record=null)
-    {
-
-        // Set errors and data initially to null
-        $_errors = null;
-        $_data = null;
-        $_posted = false;
-
-        /*
-            If no record has been set, we do nothing other than flash a
-            message, otherwise we check the group exists.
-         */
-        if(!$this->_default_model->find($record))
-        {
-            // The record is not set so flash the message
-             $_errors = 'notfound';
-
-        } else
-        {
-
-            /*
-                The record exists so set the $_data parameter that is passed
-                into the form to populate it.
-             */
-            $_data = $this->_default_model->data();
-
-
-    		/*
-    			If the update form has been posted, then attempt to update the record
-    			by using update().
-    		*/
-    		if(null !== Input::get($this->_default_model->_default_submit_button))
-    		{
-    			$_posted = true;
-    			$_errors = $this->_default_model->update($_data);
-
-            } // if posted
-        }
-
-        /*
-            Pass the data to the view.
-
-            As well as the page name and page type, we send a 'group' containing these
-            groups data to populate the form.
-        */
-        $this->view(
-            '/admin/edit',
-            [
-                'page_title' => $this->_default_model->_default_title,
-                'record' => $_data,
-                'posted' => $_posted,
-                'class' => $this->_default_model->_default_class_name,
-                'errors' => $_errors
-            ]
-        );
-    } // edit ()
 
 
 
+
+
+
+
+    # THIS WILL BE THE OVERVIEW
     /**
      * Shows a listing
      *
@@ -398,739 +1344,20 @@ class Users extends Controller
             [
                 'page_title' => $this->_default_model->_default_title,
                 'class' => $this->_default_model->_default_class_name,
+                'count' => $this->_default_model->count()
             ]
         );
     } // index()
 
-    public function details($record=null)
-    {
-        // Set errors and data initially to null
-        $_data = null;
-        $_errors = null;
-        $_posted = false;
-        $_status = null;
-        /*
-            If no record has been set, we do nothing other than flash a
-            message, otherwise we check the group exists.
-         */
-        if(!$this->_default_model->find($record))
-        {
-            // The record is not set so flash the message
-             $_errors = 'notfound';
-
-        } else
-        {
-            if(null !== Input::get($this->_default_model->_default_submit_button))
-    		{
-    			$_posted = true;
-                if (Input::get($this->_default_model->_default_submit_button) == 'unban') {
-
-                    if($this->_default_model->process ('update', array('status' => '1'), $this->_default_model->data()->id)) {
-
-            			$_status = 'unbanned';
-                        $this->_default_model->find($record);
-            		}
-                }
-
-
-                if (Input::get($this->_default_model->_default_submit_button) == 'ban') {
-
-                    if($this->_default_model->process ('update', array('status' => '-1'), $this->_default_model->data()->id)) {
-
-            			$_status = 'banned';
-                        $this->_default_model->find($record);
-            		}
-                }
-
-                if (Input::get($this->_default_model->_default_submit_button) == 'verify') {
-
-                    if($this->_default_model->process ('update', array('status' => '1'), $this->_default_model->data()->id)) {
-
-            			$_status = 'verified';
-                        $this->_default_model->find($record);
-            		}
-                }
-
-                if (Input::get($this->_default_model->_default_submit_button) == 'change_level') {
-
-                    if($this->_default_model->process ('update', array('group' => Input::get('user_level')), $this->_default_model->data()->id)) {
-
-            			$_status = 'change_level';
-                        $this->_default_model->find($record);
-            		}
-                }
-
-
-
-            } // if posted
-
-            /*
-                The record exists so set the $_data parameter that is passed
-                into the form to populate it.
-             */
-            $_data = $this->_default_model->data();
-
-        }
-
-        $this->view(
-            '/admin/view',
-            [
-                'page_title' => $this->_default_model->_default_title,
-                'record' => $_data,
-                'class' => $this->_default_model->_default_class_name,
-                'posted' => $_posted,
-                'status' => $_status,
-                'errors' => $_errors
-            ]
-        );
-    } // index()
 
 }
 
 
 
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 
 
-
-
-
-/app/models/Users_Model.php
---------------------------------------------------------------------------------------------
-<?php
-
-/**
- * Demo Admin Model
- *
- * This is a fully commented example of of the default admin model for any
- * table in the database.
- *
- * These models contain all the CRUD functions, forms, table and session
- * information.
- *
- * This demo is based on functions around User Groups.
- *
- * @package Core
- * @author  Steve Ball <steve@follyball.co.uk>
- * @copyright Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
- *
- */
-
-// Include the initiation file
-require_once '../app/init.php';
-
-
-class Users_Model extends Users_Core
-{
-	// Set any private variables that can only be accessed within this file
-	private // The session name to be used in flash alerts
-		$_default_session_name = 'Users',
-
-           
-
-
-            // Variables that are created in the class
-            $_data,
-            $_postdata,
-            $_field,
-            $_errortext,
-            $_errors,
-            $_inputs,
-            $_validate,
-            $_value,
-            $_record;
-
-    // Set any public functionsn that can be accessed globally
-    public  // The button to add to create and update forms
-            $_default_submit_button = 'user_submit'
-
-
-            ;
-
-
-
-
-	/**
-	 * Connect to the database
-	 *
-	 * Returns an instance of the database connection to be used within the class
-	 *
-	 * @return  Database connection
-	 */
-	private function db()
-	{
-		return  DB::dbConnect();
-	} // db()
-	
-	/**
-	 * Create a new record
-	 *
-	 * Collects post data, validates it and inserts it into the database
-	 *
-	 */
-	public function create ()
-	{	
-		/*
-			During the create process, we will validate any posted data to 
-			ensure not field rules are being broken. 
-			
-			This validation returns multiple $keys in an array including the status and any errors. 
-			
-			We create an empty object called $_validate ready to hold these. Although 
-			$_validate->error is primarily used to store the validation error arrays, we can 
-			also use it to store a string to describe any non-validation errors that have 
-			prevented the create, such as a token mismatch.
-			
-			The view checks it $_validate->error is an object and if so, returns the array of
-			errors, otherwise it returns a message based on the string.
-		 */
-		$_validate = (object)array();
-
-		/*
-		    By the time we get to the actual insert part, we only want valid $_POST 
-		    data to remain ready for insertion. To achieve this, we unset any 
-		    unrequired $_POST data as we go along.
-		    
-		    Just in case we need to reference any original $_POST data, we set 
-		    it to $_postdata, which we then use as the final creation data. It is 
-		    this we will unset any unrequired variables from.
-		 */
-		$_postdata = $_POST;
-
-		
-		// Unset the submit button from the $_postdata.
-		unset($_postdata[$this->_default_submit_button]);
-
-		/*
-			The forms all have .req-token to prevent double-posting on page 
-			refresh. This generates a new $_SESSSION['token'] value and also 
-			adds a hidden form element containing the $_SESSSION['token'].
-			
-			We need to check that the posted token matches the current $_SESSSION['token']
-			and only proceed if it does.
-		 */
-		if(!Token::check(Input::get('token')))
-		{
-			// The token check failed so set the errors to 'token'
-			$_validate->error = 'token';
-
-		} 
-		else
-		{
-			/*
-				The token check is succesful, so we again unset that from the $_postdata, 
-				to ensure we only have valid insert data left.
-			 */
-			unset($_postdata['token']);
-
-			/*
-				Now $_postdata should contain only $_POST data from the actual input
-				fields.
-
-				If there is data left, we attempt to validate and insert it. 
-			 */
-			if(!empty($_postdata))
-			{
-				/*
-					There is $_postdata so we attempt to validate it.
-
-					The validation for this form is held in $_default_form_fields in the __Core class
-					so we pass this into Form_Functions::postValidate(), along with the $_postdata and 
-					this checks each field in $_postdata against it's relevant validation if it exists.
-					
-					the function returns a boolean 'status' as to
-					whether validation was passed.
-
-					If validation failed, it will also contain any validation errors
-					that have been generated.
-				 */
-				$_validate = Form_Functions::postValidate($_postdata, self::$_default_form_fields);
-
-				/*
-					One of the keys returned by postValidate() is 'status'. This is a boolean which simply states whether the validation was successful or not.
-				    
-					If $_validate->status is true, validation passed and we can attempt the insert, otherwise we do nothing and the view will show the errors that are return at the bottom of this function
-				 */
-				if($_validate->status)
-				{
-					/*
-						$_validate->status has returned true so all is ok so attempt the insert.
-
-						We do this using the process() function, passing in 'insert'
-						as the method along with the $_postdata.
-					*/
-					$this->process ('insert', $_postdata);
-
-				}  // if($validate->status)
-
-			} // empty($_postdata) check
-
-		} // Token::check()
-
-		// Return any validation errors if they have been set
-		return (isset($_validate->error)) ? $_validate->error : false ;
-
-	} // create()
-	
-	/**
-         * Delete a record
-         *
-         *  Deletes the specified record from $this->_default_table['name']
-         *
-         * @param  int  $record  Record ID
-         */
-	public function delete ($record)
-	{
-		/*
-		    We do not need to attempt any validation on
-		    deletes so just delete using the process() function, passing in 'delete'
-		    as the method along with the $_postdata and record id ($record).
-		*/
-		$this->process ('delete', $record);
-	
-	} // delete ()
-
-	
-	
-	/**
-         * Find a record
-         *
-         * Finds a record and assigns it's details from the $this->_default_table['name']
-         * table to $this->_data. This can then be accessed from other files
-	 * using data().
-	 *
-	 *
-         * @param  string/email/int 	$group  	Group identifier
-         * @return Boolean/Array
-         */
-	public function find($_record=null)
-	{	
-		// We only run this if a record has been passed in so check for it 
-		if ($_record)
-		{
-			/*
-				A record has been passed in so we now need to check what parameter has 
-				been used to determine which field we are going to check it against in the table.
-				
-				For Users, the $_record will either be the id or the username so we do not have 
-				to manipulate it at all. There will be some occasions where we have to tweak 
-				$_record to suit what is stored in the database compared to what we can use in a url. Ideally in these situations, we would use a slug.
-				
-				If $_record is a number, we will assume it is the id field as usernames must start with a letter, otherwise it must be the username.
-			
-			 */
-			if(is_numeric($_record) && (int) $_record == $_record) 
-			{	
-				// $_record is numeric so we need to look up the id field
-				$_field = 'id';
-			} else 
-			{
-				// $_record is not numeric so we need to look up the username field
-				$_field = 'username';
-			}
-
-			// Search the table for the passed in $_record and correct $_field
-			$data = self::db()->get(self::$_default_table['name'], array($_field, '=', $_record));
-
-			// If the query returns any rows, set the data to $this->_data and return true
-			if ($data->count()) {
-				$this->_data = $data->first();
-				return true;
-			}
-		}
-		return false;
-	} // find ()
-	
-	/**
-	 * Process the request
-	 *
-	 * Attempts to process the requested action and creates
-	 * any mesages as flash alerts.
-	 *
-	 * @param  string       $type      The action to perform
-	 * @param  array        $_postdata Posted Dara
-	 * @param  int/null     $_refdata  Record ID
-	 */
-	public function process ($type, $_postdata, $_refdata=null)
-	{
-		// Explain this after all are done
-		if (is_object($_refdata)) {
-		    $_id = $_refdata->id;
-		} else {
-		    $_id = $_refdata;
-		}
-
-		// For front end use $type == 'register' to allow for other bits
-		
-		
-		/* 
-			Create mode 
-			
-			When creating a new record there is not any $_refdata to work with so all we 
-			use is the actual $_POST data ($_postdata)
-		  */
-		if ($type == 'insert')
-		{
-			//Confirm password is not required any more so unset it
-			unset($_postdata['confirm_password']);
-
-			/* 
-				In admin mode (or non-verification registration mode) we set the status to active (1)
-				and the user group to 'Standard User' (1) so we add these to the $_postdata
-			 */
-			$_postdata['status'] = 1;
-			$_postdata['group'] = 1;
-
-			/* 
-				As the login process requires password hashing to check against the already hashed password 
-				in the database, we add a salt to $_postdata and then use that same salt to hash the posted password 
-				amend the 'password' record in $_postdata.
-			 */
-			$_postdata['salt'] = Hash::salt(32);
-			$_postdata['password'] = Hash::make(Input::get('password'), $_postdata['salt']);
-
-			// Finally add the joined date to $_postdata using the current timestamp
-			$_postdata['joined'] = date('Y-m-d H:i:s');
-
-			// By this stage, $_postdata only contains the correct data to insert so attempt it.
-			 if (!self::db ()->insert(self::$_default_table['name'], $_postdata))
-			 {
-				// The insert was unsuccesful
-				throw new Exception('There was a problem creating an account!');
-
-				// Flash a generic error message
-				$this->crudFlash ('generic_error');
-
-				return false;
-			 } 
-			 else
-			{
-				return true;
-			}
-
-		}// if (insert ())
-		else 
-		/* 
-			Update mode 
-			
-			When updating a record there is $_refdata to work with. This is an array containing the existing data for 
-			the record. We use the 'id' from this to make sure the correct record is being updated. 
-			
-			Also, as the lookup for the update page uses  'username', we check if that has changed and if so, redirect to
-			the update pafe with the new 'username'.
-		  */
-		if ($type == 'update')
-		{	
-			// We do not have to unset, add or amend any $_postdata so can go straight into the update
-			if (!self::db ()->update(self::$_default_table['name'], $_refdata, $_postdata))
-			{
-				// The update was unsuccesful
-				throw new Exception('There was a problem updating the account!');
-				// Flash a generic error message
-				$this->crudFlash ('generic_error');
-
-				return false;
-			} 
-			else
-			{
-				/*
-					If we have changed the 'username' field, the url will no longer work
-					as it is looking for the old name.
-
-					We check to see if the username still exists in _postdata and if so, if it matches
-					the original name.
-
-					If it does we re-direct to the edit page of the new username.
-				 */
-
-				if(isset($_postdata['username']) && $_postdata['username'] !== $_refdata->username)
-				{
-					/*
-						As we are redirecting to a new page, it will not pick up the $data posted to
-						the view so we set a flash alert that will be picked up there.
-					*/
-					Bootstrap::flashAlert(
-							$variable = $this->_default_class_name,
-							$color = 'success',
-							$heading = $this->_default_title . ' updated!',
-							$body = 'The ' . $this->_default_title . ' was successfully updated.',
-							$dismissible=true
-						);
-					Redirect::to ($this->_default_controller_path . 'Edit/' . $_postdata['username']);
-				}
-				return true;
-			} 
-		}// if (update ())
-		else 
-		if ($type == 'delete')
-		{	
-			// We do not have to unset, add or amend anything so purely run the delete
-			if(!self::db ()->delete(self::$_default_table['name'], array('id', '=', $_postdata)))
-			{
-				// The update was unsuccesful
-				throw new Exception('There was a problem updating the account!');
-				// Flash a generic error message
-				$this->crudFlash ('generic_error');
-
-				return false;
-			}
-		}// if (delete ())
-
-	} // process ()
-
-	
-	
-	
-	
-	/**
-         * Update a record
-         *
-         * Collects post data, validates it and updates specified record
-         * in the $this->_default_table['name']
-        *
-         * @param  int  $record  Record ID
-         */
-	public function update($record=null)
-	{	
-		/*
-			During the update process, we will validate any posted data to 
-			ensure no field rules are being broken. 
-			
-			This validation returns multiple keys in an array including the status and any errors. 
-			
-			We create an empty object called $_validate ready to hold these. Although 
-			$_validate->error is primarily used to store the validation error arrays, we can 
-			also use it to store a string to describe any non-validation errors that have 
-			prevented the create, such as a token mismatch, a not found record or posted 
-			data not being different to existing data.
-			
-			The view checks it $_validate->error is an object and if so, returns the array of
-			errors, otherwise it returns a message based on the string.
-		 */
-		$_validate = (object)array();
-
-		/*
-			By the time we get to the actual update part, we only want valid $_POST 
-			data to remain ready for updating. To achieve this, we unset any 
-			unrequired $_POST data as we go along.
-		    
-			Just in case we need to reference any original $_POST data, we set 
-			it to $_postdata, which we then use as the final update data. It is 
-			this we will unset any unrequired variables from.
-		 */
-		$_postdata = $_POST;
-
-		// Unset the submit button from the $_postdata.
-		unset($_postdata[$this->_default_submit_button]);
-
-		/*
-			The forms all have .req-token to prevent double-posting on page 
-			refresh. This generates a new $_SESSSION['token'] value and also 
-			adds a hidden form element containing the $_SESSSION['token'].
-			
-			We need to check that the posted token matches the current $_SESSSION['token']
-			and only proceed if it does.
-		 */
-		if(!Token::check(Input::get('token')))
-		{
-			// The token check failed so set the errors to 'token'
-			$_validate->error = 'token';
-
-		} 
-		else
-		{
-			/*
-				The token check is succesful, so we again unset that from the $_postdata, 
-				to ensure we only have valid insert data left.
-			 */
-			unset($_postdata['token']);
-
-					 
-			/*
-				We now use the record details to check against the $_postdata
-				
-				This helps us to check which fields are actually being changed and only process, validate and only update those.
-				
-				The name="" attribute of each of the form fields matches the respective column name to allow this.
-
-				We loop through $_postdata and for each we check them against the respective existing data and if they match, unset the $_postdata record.
-
-				This will avoid errors with fields that have to be unique and also should be faster as we are only actually processing changed data.
-			*/
-			foreach ($_postdata as $key => $value)
-			{
-				/*
-					Check the posted data against existing values
-
-					Checks the value of the input and checks the corresponding record
-					in the table to see it has changed. If not, it will unset it.
-				*/
-				if($value && $value == $this->_data->$key)
-				{
-					// The posted value matches the database field value so unset it
-					unset($_postdata[$key]);
-				}
-
-			} // End foreach loop
-
-			
-			/*
-				Now $_postdata should contain only $_POST data from the actual input
-				fields.
-
-				If there is data left, we attempt to validate and insert it. 
-			 */
-			if(!empty($_postdata))
-			{
-				/*
-					There is $_postdata so we attempt to validate it.
-
-					The validation for this form is held in $_default_form_fields in the __Core class
-					so we pass this into Form_Functions::postValidate(), along with the $_postdata and 
-					this checks each field in $_postdata against it's relevant validation if it exists.
-					
-					the function returns a boolean 'status' as to
-					whether validation was passed.
-
-					If validation failed, it will also contain any validation errors
-					that have been generated.
-				 */
-				$_validate = Form_Functions::postValidate($_postdata, self::$_default_form_fields);
-
-				/*
-					One of the keys returned by postValidate() is 'status'. This is a boolean which simply states whether the validation was successful or not.
-				    
-					If $_validate->status is true, validation passed and we can attempt the insert, otherwise we do nothing and the view will show the errors that are return at the bottom of this function
-				 */
-				if($_validate->status)
-				{
-					/*
-						$_validate->status has returned true so all is ok so attempt the insert.
-
-						We do this using the process() function, passing in 'update'
-						as the method along with the $_postdata and the record id.
-					*/
-					$this->process ('update', $_postdata, $record->id);
-
-				}  // if($validate->status)
-
-			} 
-			else
-			{
-				/*
-				    There is no $_postdata so it can only be that a form was posted with no
-				    changed data so set the errors to 'nochange'
-				 */
-				$_validate->error = 'nochange';
-
-			} // empty($_postdata) check
-
-		} // Token::check()
-
-		// Return any validation errors if they have been set
-		return (isset($_validate->error)) ? $_validate->error : false ;
-
-	} // update ()
-
-
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-    /**
-     *  Create a Session::flash message for crud functions
-     *
-     * @param  string 	$type    The type of message we are setting
-     * @param  string 	$text    Additional alert body text
-     * @return $_SESSION variabloe containing a Bootstrap alert
-     *
-     */
-    public function crudFlash ($type, $text=null)
-    {
-        Form_Functions::crudAlert ($this->_default_title, $this->_default_session_name, $type, $text);
-
-    } // crudFlash ()
-
-    /**
-     * Return a records data
-     *
-     *	Returns the private $this->_data details
-     *	array in a public function
-     *
-     * @return array 	Record data
-     *
-    **/
-    public function data ()
-    {
-       return $this->_data;
-    } // data ()
-
-
-
-   
-    /**
-     * Return a list of Records
-     *
-     * @return array  List of Records
-     */
-    public function listing ()
-    {
-        // Select all records from the database
-        $list = self::db ()->query('SELECT
-            *
-            FROM `' . self::$_default_table['name'] . '`'
-        );
-
-        // Return the results as an array
-        return $list->results();
-    } // listing ()
-
-
- 
-
-
-    /**
-     *	Quick data lookup
-     *
-     * SImply takes a valid parameter and runs it through the find () function within
-     * this model and returns the data.
-     *
-     * This can be used to acces either all data as an array
-     *  $var = getData ($param)
-     *
-     * or a single element
-     * $var = getData ($param)->name
-     **/
-    public function getData ($param)
-    {
-        $data = $this->find($param);
-        return $this->data();
-    }
-
-}
-
-
-
-
-
-
-
-
-
-
-/app/core/extends/Users_Core.php
---------------------------------------------------------------------------------------------
 <?php
 
 require_once '../app/init.php';
@@ -1138,23 +1365,21 @@ require_once '../app/init.php';
 class Users_Core {
 
 	 protected static
-		// Validation rules for insert and update $_POST data
-		// To not have validation on a field, simply
 		/*
 			Default form fields for the create and update forms
-			
-			This array holds everything required to show the forms, 
+
+			This array holds everything required to show the forms,
 			along with any validation status.
-			
+
 			'type' 		required 	The type of form input required for the field
 			This must be one of the options available in Form_Functions::createFormGroup()
-			
+
 			'help' 		optional		Help text to show below the form field
-			
+
 			'error' 		optional		Text to return after a validation error on the field. If ommitted, it will default to text for the validation type in Validate::check()
-			
+
 			'validation'	optional		The validation rules to run against the field
-		
+
 		*/
 		$_default_form_fields = array (
 			'username' => array(
@@ -1230,14 +1455,12 @@ class Users_Core {
 
     private
 
-    $_null = 'null'
-
+        $_data
     ;
 
     private static
- 
-    $_default_submit_button = 'user_submit'
 
+        $_default_submit_button = 'user_submit'
     ;
 
     public
@@ -1247,361 +1470,729 @@ class Users_Core {
     $_default_class_name = 'Users',
 
     // The path to the controller root for redirects
-    $_default_controller_path = '/Admin/Users/'
-    ;
+    $_default_controller_path = '/Admin/Users/',
 
+	// The database table, and a list of fields and alias to build the headers for the admin area
+	$_crud_table = array(
+		'name' => 'users',
+		'listing' => array(
 
-    public static
-    // The database table, and a list of fields and alias to build the headers
-    $_default_table = array(
-        'name' => 'users',
-        'listing' => array(
+		    'id' => array(
+			'th' => array(
+			    'alias' => '#'
+			),
+			'td' => array(
+			    'type' => 'text'
+			)
 
-            'id' => array(
-                'th' => array(
-                    'alias' => '#'
-                ),
-                'td' => array(
-                    'type' => 'text'
-                )
+		    ),
 
-            ),
+		    'username' => array(
+			'th' => array(
+			    'alias' => 'Username'
+			),
+			'td' => array(
+			    'type' => 'link',
+			    'link_field' => 'username'
+			)
 
-            'username' => array(
-                'th' => array(
-                    'alias' => 'Username'
-                ),
-                'td' => array(
-                    'type' => 'link',
-                    'link_field' => 'username'
-                )
+		    ),
+		    'group' => array(
+			'th' => array(
+			    'alias' => 'User Group'
+			),
+			'td' => array(
+			    'type' => 'text'
+			)
+		    ),
+		    'joined' => array(
+			'th' => array(
+			    'alias' => 'Joined'
+			),
+			'td' => array(
+			    'type' => 'date',
+			    'format' => 'dS F Y - H:i'
+			)
 
-            ),
-            'group' => array(
-                'th' => array(
-                    'alias' => 'User Group'
-                ),
-                'td' => array(
-                    'type' => 'text'
-                )
-            ),
-            'joined' => array(
-                'th' => array(
-                    'alias' => 'Joined'
-                ),
-                'td' => array(
-                    'type' => 'date',
-                    'format' => 'dS F Y - H:i'
-                )
-
-            ),
-        )
-    )
-    ;
-
-
-
-
-    public function __construct()
-	{
-
-
-    }
-
-    public static function tableData ()
-    {
-
-        return array(
-            'name' => 'users',
-
-            'listing' => array(
-                'id' => array(
-                    'th' => array(
-                        'alias' => '#'
-                    ),
-                    'td' => array(
-                        'type' => 'text'
-                    )
-
-                ),
-
-                'username' => array(
-                    'th' => array(
-                        'alias' => 'Username'
-                    ),
-                    'td' => array(
-                        'type' => 'link',
-                        'link_field' => 'username'
-                    )
-
-                ),
-                'group' => array(
-                    'th' => array(
-                        'alias' => 'User Group'
-                    ),
-                    'td' => array(
-                        'type' => 'text'
-                    )
-                ),
-                'joined' => array(
-                    'th' => array(
-                        'alias' => 'Joined'
-                    ),
-                    'td' => array(
-                        'type' => 'date',
-                        'format' => 'dS F Y - H:i'
-                    )
-
-                ),
-            ),
-            'buttons' => array (
-                'link_field' => 'username',
-                'items' => array('details', 'edit', 'delete')
-            )
-        );
-
-    }
-
-
-    public static function register_form($_errors=null)
-    {
-        return self::default_form($params=array('errors' => $_errors, 'passwords' => 'true', 'terms' => 'true'));
-    }
-
-    public static function admin_create_form($_errors=null)
-    {
-        return self::default_form($params=array('errors' => $_errors, 'passwords' => 'true'));
-    }
-
-    public static function admin_edit_form ($_record, $_errors=null)
-    {
-        return self::default_form($params=array('errors' => $_errors, 'record' => $_record));
-    }
+		    ),
+		),
+		'buttons' => array (
+		    'link_field' => 'username',
+		    'items' => array('details', 'edit', 'delete')
+		)
+	    )
+	    ;
 
     /**
-     * Create / Update form
-     *
-     * The form for both creating and updating the record, complete with
-     * validation and populated when in update mode.
-     *
-     * @param  array $record    Record database results
-     * @param  array $_errors   Validation Errors
-     * @return string           Complete form
+     * Construct the re-usable variables
      */
-     public static function default_form ($params=array())
-     {   # array the above so we do not habve to set bllanks tpo order them
-
-
-        /**
-         * Set the output variable
-         *
-         * The final output will be built as a variable called
-         * $text so create it ready to add to
-         *
-         * @var null
-         */
-        $text = '';
-
-
-        $text .= '<form id="' . self::$_default_table['name'] . '_form" action="" method="post" class="req-token">';
-
-
-
-        /**
-         * Loop through the inputs array and create variables
-         *
-         * See explanation in loginForm()
-         *
-         * The only difference here is that we also set a blank
-         * '_formgroup' variable. We use the setFormGroups()
-         * function in Form_Functions to set any validation errors
-         * to it. This gets set as a class in the inputs div.formgroup
-         *
-         * Example
-         * If there is a validation error on 'username', we would get
-         * $username_formgroup ='has-danger'
-         *
-         */
-        /*
-        foreach ($_inputs as $_value)
-        {
-            //Set a blank xxx_formgroup variable
-
-            if(Input::get(self::$_default_submit_button) && is_array($_errors))
-            {
-                ${$_value.'_validation_class'} = Form_Functions::setValidation ($_value, $_errors);
-            } else
-            {
-                ${$_value.'_validation_class'} = '';
-            }
-
-            // Set posted data to variables if they exist
-            if($record)
-            {
-                ${$_value.'_value'} = (Input::get($_value)) ? Input::get($_value) : $record->$_value;
-            } else
-            {
-                ${$_value.'_value'} = (Input::get($_value)) ? Input::get($_value) : '';
-            }
-
-        } // foreach $inputs
-
-
-*/
-
-
-
-
-
-
-
-
-
-
-        foreach (self::$_default_form_fields as $key => $_value)
-        {
-            $input_array = array();
-
-            $input_array['type'] = $_value['type'];
-
-            if(Input::get(self::$_default_submit_button) && isset($params['errors']) && is_array($params['errors']))
-            {
-                $input_array['validation'] = Form_Functions::setValidation ($key, $params['errors']);
-
-            } else
-            {
-                $input_array['validation'] = '';
-            }
-
-            // Set posted data to variables if they exist
-            if(isset($params['record']) && isset($params['record']->$key))
-            {
-                $input_array['value'] = (Input::get($key)) ? Input::get($key) : $params['record']->$key;
-            } else
-            {
-                $input_array['value'] = (Input::get($key)) ? Input::get($key) : '';
-            }
-
-            $input_array['help'] = (isset($_value['help'])) ? $_value['help'] : '';
-
-            ${'_input_'.$key} = Form_Functions::createFormGroup (
-                $_value['type'],
-                $key,
-                $input_array['value'],
-                $input_array['validation'],
-                $input_array['help']
-            );
-
-
-        }
-
-        $text .= '<div class="row">';
-        $text .= '<div class="col-12">';
-        $text .= $_input_username;
-        $text .= $_input_email;
-        $text .= '</div><!-- .col-12 -->';
-        $text .= '</div><!-- .row-->';
-
-        $text .= '<div class="row">';
-        $text .= '<div class="col-md-6">';
-        $text .= $_input_firstname;
-        $text .= '</div><!-- .col-md-6 -->';
-
-        $text .= '<div class="col-md-6">';
-        $text .= $_input_lastname;
-        $text .= '</div><!-- .col-md-6 -->';
-
-        $text .= '</div><!-- .row-->';
-
-        if(isset($params['passwords']) && $params['passwords'] == 'true') {
-            $text .= '<div class="row">';
-            $text .= '<div class="col-md-6">';
-            $text .= $_input_password;
-            $text .= '</div><!-- .col-md-6 -->';
-
-            $text .= '<div class="col-md-6">';
-            $text .= $_input_confirm_password;
-            $text .= '</div><!-- .col-md-6 -->';
-
-            $text .= '</div><!-- .row-->';
-        }
-
-        $terms = Globals::get('user_messages/registration/terms');
-        if(isset($params['terms']) && $params['terms'] == 'true') {
-            $text .= '<div class="form-check">';
-    		$text .= '<label class="form-control-label custom-control custom-checkbox mb-2 mr-sm-2 mb-sm-0">';
-    		$text .= '<input type="checkbox" class="custom-control-input" name="accept_terms">';
-    		$text .= '<span class="custom-control-indicator"></span>';
-    		$text .= '<span class="custom-control-description">I have read the <a href="#" data-toggle="collapse" data-target="#showTerms" aria-expanded="false" aria-controls="showTerms">Terms and Conditions</a>';
-    		$text .= '</span>';
-    		$text .= '</label>';
-    		$text .= '</div>';
-
-    		$text .= '<div class="collapse" id="showTerms">';
-    		$text .= '<div class="card card-block">';
-    		$text .= $terms;
-    		$text .= '<a href="#" class="text-right" data-toggle="collapse" data-target="#showTerms" aria-expanded="false" aria-controls="showTerms">Close</a>';
-    		$text .= ' </div>';
-    		$text .= '</div>';
-        }
-
-        $text .= '<hr>';
-
-        $text .= '<div class="col-12">';
-        $text .= '<button type="submit" class="btn btn-primary btn-sm float-right" name="'.self::$_default_submit_button.'" value="submit">Submit</button>';
-        $text .= '</div>';
-        $text .= '</form>';
-
-
-
-
-
-        // Set an array of all the fields in the form to help with field population
-        $_inputs = array('username',
-                       'email',
-                       'firstname',
-                       'lastname',
-                       'password',
-                       'confirm_password',
-                       'accept_terms'
-                   );
-
-
-
-        // Return the output
-        return $text;
-
-    } // default_form ()
-
-
-    public static function details ($params=array())
+    public function __construct()
     {
+        // Set the correct name for user sessions
+        $this->_sessionName = Globals::get('user/user_session');
 
-        $text = '';
+        // Set the correct name for the Remember Me cookie
+        $this->_cookieName = Globals::get('user/cookie_name');
+
+    } // __construct
 
 
-        if ($params->status == '0') {
-            $text .=  '<form class="form-inline" method="post" action="">';
-    		$text .=  '<button type="submit" class="btn btn-success btn-sm" name="'.self::$_default_submit_button.'" value="verify">Verify Now</button>';
-    		$text .= '</form>';
-        }
-        else
-        if ($params->status == '-1')
-        {
-            // Build the output
-            $text .=  '<form class="form-inline" method="post" $text="">';
-    		$text .=  '<button type="submit" class="btn btn-primary btn-sm" name="'.self::$_default_submit_button.'" value="unban">Un-Ban</button>';
-    		$text .= '</form>';
-        }
-        else
-        {
-            // Build the output
-            $text .=  '<form class="form-inline" method="post" action="">';
-            $text .=  '<button type="submit" class="btn btn-danger btn-sm" name="'.self::$_default_submit_button.'" value="ban">Ban User</button>';
-            $text .= '</form>';
-        }
+    /**
+	 * Connect to the database
+	 *
+	 * Returns an instance of the database connection to be used
+	 * within the class. This is set as a function as it also needs
+	 * to be accessed by the model.
+	 *
+	 * @return  Database connection
+	 */
+	protected function db()
+	{
+		return  DB::dbConnect();
+	} // db()
 
-        // Build the output by starting the form
+	/**
+	 * Get the total number of records
+	 *
+	 * @return int 	    Count of rows
+	 */
+	public function count()
+	{
+		// Select all records from the database
+		$_qry  =  $this->db()->query('SELECT * FROM '.$this->_crud_table['name']);
+
+		// Return a count of the records returned
+		return $_qry->count();
+	} // count()
+
+	/**
+         *  Return a records data
+         *
+         *	Returns the private $this->_data details
+         *	array in a public function
+         *
+         * @return array 	Record data
+         *
+         **/
+	public function data ()
+	{
+		return $this->_data;
+	} // data ()
+
+        /**
+         * Create / Update / Register form
+         *
+         * The form for both creating and updating the record, complete with
+         * validation and populated when in update mode.
+         *
+         * The default user form is far more complex than any others will be due
+         * to the different variants that may be shown in user update, admin update,
+         * admin create and registration modes.
+         *
+         * To alleviate this, we actually call a specific function for the form -
+         * admin_edit_form(), admin_create_form(), register_form() with as few parameters
+         * as possible and then call this function from within passing in all required
+         * parameters.
+         *
+         * @param  array $record    Record database results
+         * @param  array $_errors   Validation Errors
+         * @return string           Complete form
+         */
+	public static function default_form ($params=array())
+	{
+		/**
+		 * Set the output variable
+		 *
+		 * The final output will be built as a variable called
+		 * $text so create it ready to add to
+		 *
+		 * @var null
+		 */
+		$text = '';
+
+		// Build the opening <form> tag using the 'name' $param as the id
+		$text .= '<form id="' . $params['name'] . '_form" action="" method="post" class="req-token">';
+
+		/**
+		 * Loop through the inputs array and build the form groups for each
+		 *
+		 * Using $_default_form_fields at the top of this file, we loop through
+		 * each one setting the required parameters to pass into
+		 * Form_Functions::createFormGroup() and create the form.
+		 */
+		foreach (self::$_default_form_fields as $key => $_value)
+		{
+			// Create an empty array to store the details to pass
+			$input_array = array();
+
+			/*
+				Add the input type to the array
+
+				This is the type of input we are calling such as 'text', 'select',
+				'textarea' etc.
+			*/
+			$input_array['type'] = $_value['type'];
+
+			/*
+				If the form has been posted and there are errors, we need to set
+				validation classes for the inputs.
+
+				We do this by simply passing the key and errors into Form_Functions::setValidation () which will return either 'is-valid'
+				or 'is-invalid'.
+			*/
+			if(Input::get(self::$_default_submit_button) && isset($params['errors']) && is_array($params['errors']))
+			{
+				$input_array['validation'] = Form_Functions::setValidation ($key, $params['errors']);
+			} 
+			else
+			{
+				$input_array['validation'] = '';
+			}
+
+			/*
+				We now set the value to display in the input.
+
+				If we are in create mode, there will be no default population but
+				if we are in edit mode, the field will need to be populated with
+				the existing data.
+
+				Either way, if there has been a post attempt, this will override
+				any defaults and the input will be populated with that.
+
+				This will prevent people from having to fill in the whole form
+				again after a failed post.
+			 */
+			if(isset($params['record']) && isset($params['record']->$key))
+			{
+				// Record is set so set the default to the key if there is no post data
+				$input_array['value'] = (Input::get($key)) ? Input::get($key) : $params['record']->$key;
+			} 
+			else
+			{
+				// Record is not set so set the default to '' if there is no post data
+				$input_array['value'] = (Input::get($key)) ? Input::get($key) : '';
+			}
+
+			// If any help text has been passed, show it here
+			$input_array['help'] = (isset($_value['help'])) ? $_value['help'] : '';
+
+
+			/*
+				Create the formgroup
+
+				When we pass everything created above into  Form_Functions::createFormGroup ()
+				it will create the who formgroup and set it to a variable with
+				a prefix of $_input_ to allow us to the use in the body of the form.
+
+				For example, if the key passed in is 'username' we will get a variable
+				called $_input_username.
+			 */
+			${'_input_'.$key} = Form_Functions::createFormGroup (
+				$_value['type'],
+				$key,
+				$input_array['value'],
+				$input_array['validation'],
+				$input_array['help']
+			);
+
+		} // foreach  $_default_form_fields
+
+		// Start building the body of the form
+		$text .= '<div class="row">';
+		$text .= '<div class="col-12">';
+		$text .= $_input_username;
+		$text .= $_input_email;
+		$text .= '</div><!-- .col-12 -->';
+		$text .= '</div><!-- .row-->';
+
+		$text .= '<div class="row">';
+		$text .= '<div class="col-md-6">';
+		$text .= $_input_firstname;
+		$text .= '</div><!-- .col-md-6 -->';
+
+		$text .= '<div class="col-md-6">';
+		$text .= $_input_lastname;
+		$text .= '</div><!-- .col-md-6 -->';
+
+		$text .= '</div><!-- .row-->';
+
+		// If the passwords parameter has been passed, add those to the form
+		if(isset($params['passwords']) && $params['passwords'] == 'true') 
+		{
+			$text .= '<div class="row">';
+			$text .= '<div class="col-md-6">';
+			$text .= $_input_password;
+			$text .= '</div><!-- .col-md-6 -->';
+
+			$text .= '<div class="col-md-6">';
+			$text .= $_input_confirm_password;
+			$text .= '</div><!-- .col-md-6 -->';
+
+			$text .= '</div><!-- .row-->';
+		}
+
+		// If the terms parameter has been passed, add that to the form
+		if(isset($params['terms']) && $params['terms'] == 'true') 
+		{
+			$text .= '<div class="form-check">';
+			$text .= '<label class="form-control-label custom-control custom-checkbox mb-2 mr-sm-2 mb-sm-0">';
+			$text .= '<input type="checkbox" class="custom-control-input" name="accept_terms">';
+			$text .= '<span class="custom-control-indicator"></span>';
+			$text .= '<span class="custom-control-description">I have read the <a href="#" data-toggle="collapse" data-target="#showTerms" aria-expanded="false" aria-controls="showTerms">Terms and Conditions</a>';
+			$text .= '</span>';
+			$text .= '</label>';
+			$text .= '</div>';
+
+			$text .= '<div class="collapse" id="showTerms">';
+			$text .= '<div class="card card-block">';
+			$text .= Globals::get('user_messages/registration/terms');
+			$text .= '<a href="#" class="text-right" data-toggle="collapse" data-target="#showTerms" aria-expanded="false" aria-controls="showTerms">Close</a>';
+			$text .= ' </div>';
+			$text .= '</div>';
+		}
+
+		$text .= '<hr>';
+
+		/*
+			Add the submit button
+
+			If we are using the form for front-end registration we need the name
+			to be set to 'register', otherwise we use the default button name
+		 */
+
+
+		$_button_name = ($params['name'] == 'register') ? 'register' : self::$_default_submit_button;
+
+		$text .= '<div class="col-12">';
+		$text .= '<button type="submit" class="btn btn-primary btn-sm float-right" name="'.$_button_name.'" value="submit">Submit</button>';
+		$text .= '</div>';
+		$text .= '</form>';
+
+		// Return the output
+		return $text;
+
+	} // default_form ()
+
+	/**
+	 * Find a record
+	 *
+	 * Finds a record and assigns it's details from the $this->_crud_table['name']
+	 * table to $this->_data. This can then be accessed from other files
+	 * using data().
+	 *
+	 *
+	 * @param  string/email/int 	$group  	Group identifier
+	 * @return Boolean/Array
+	 */
+	public function find($_record=null)
+	{
+		// We only run this if a record has been passed in so check for it
+		if ($_record)
+		{
+			/*
+				A record has been passed in so we now need to check what parameter has
+				been used to determine which field we are going to check it against in the table.
+
+				For Users, the $_record will either be the id or the username so we do not have
+				to manipulate it at all. There will be some occasions where we have to tweak
+				$_record to suit what is stored in the database compared to what we can use in a url. Ideally in these situations, we would use a slug.
+
+				If $_record is a number, we will assume it is the id field as usernames must start with a letter, otherwise it must be the username.
+
+			 */
+			if(is_numeric($_record) && (int) $_record == $_record)
+			{
+				// $_record is numeric so we need to look up the id field
+				$_field = 'id';
+			} else
+			{
+				// $_record is not numeric so we need to look up the username or email field depending on the data posted
+			$_field = (filter_var($_record, FILTER_VALIDATE_EMAIL)) ? 'email' :   'username';
+			}
+
+			// Search the table for the passed in $_record and correct $_field
+			$data = self::db()->get($this->_crud_table['name'], array($_field, '=', $_record));
+
+			// If the query returns any rows, set the data to $this->_data and return true
+			if ($data->count()) {
+				$this->_data = $data->first();
+				return true;
+			}
+		}
+		return false;
+	} // find ()
+
+	/**
+	 * Check if a user is logged in
+	 * @return boolean Login Status
+	 */
+	public static function isLoggedIn ()
+	{
+		return (Session::exists(Globals::get('user/user_session'))) ? true : false ;
+	} // isLoggedIn()
+
+	/**
+	 *	Quick data lookup
+	 *
+	 * 	SImply takes a valid parameter and runs it through the find () function within
+	 * 	this model and returns the data.
+	 *
+	 * 	This can be used to acces either all data as an array
+	 *  	$var = getData ($param)
+	 *
+	 * 	or a single element
+	 * 	$var = getData ($param)->name
+	 **/
+	public function getData ($param)
+	{
+		$data = $this->find($param);
+		return $this->data();
+	}
+
+	/**
+	 * Check a user has the required permission
+	 *
+	 *	Each user group can have multiple permissions and these
+	 *	are stored as json.
+	 *
+	 * 	If a groups permissions we as follows {"super_admin":0, "admin": 1,"mod":1}
+	 *
+	 *     hasPermission('super_admin') would return false
+	 *     hasPermission('admin') would return true
+	 *     hasPermission('mod') would return true
+	 *
+	 *   @param  string  $key The permission name
+	 *   @return boolean      Permission status
+	 *   @example hasPermission('admin')
+	 */
+	public function hasPermission ($key)
+	{
+		// Get the user group details for the current user
+		$usergroup = self::db()->get(
+			'user_groups',
+			array(
+				'id', '=', Session::get(Globals::get('user/user_group'))
+			)
+		);
+
+		// As long as the user group is set, check if that group has the requested permission
+		if($usergroup->count())
+		{
+			// Set the permissions of the users group to $permissions array
+			$permissions = json_decode($usergroup->first()->permissions, true);
+
+			// Check if the requested permission exists in the array
+			if ($permissions[$key] == true)
+			{
+				// The permission exists so return true
+				return true;
+			}
+		}
+		return false;
+	} // hasPermission()
+
+	/**
+	 * Log a user in
+	 *
+	 * The checks to ensure Username and Password are both filled in
+	 * are done before calling this. This simply checks the data.
+	 *
+	 * @param  array $_data User Data
+	 * @return boolean
+	 *
+	 */
+	public function login ($_data)
+	{
+		/*
+			Take the posted password value and using Hash::make
+			see if it matches the users existing (hashed) password.
+
+			Use the users existing password and salt stored in
+			$_data to do these checks.
+		 */
+		if ($_data->password === Hash::make(Input::get('password'), $_data->salt))
+		{
+			/*
+				If we have a match, we can simply set a user session
+				using the users ID and they are now logged in.
+			*/
+			self::setUserSession ($_data);
+
+			/*
+				If the user has ticked 'Remember Me' we also need to
+				set the cookie so that they are recognised on the next visit.
+			*/
+			if (Input::get('remember')) 
+			{
+
+				// Create a new hash to store in the cookie
+				$_hash = Hash::unique();
+
+				// Check to see if this user already has a login hash - if so, something is wrong with logouts
+				$hashCheck = self::db()->get('login_cookie', array('user_id', '=', $_data->id));
+
+				// As long as there is no existing record, add one to the login_cookie table
+				if (!$hashCheck->count()) {
+
+					self::db()->insert('login_cookie', array(
+						'user_id' => $_data->id,
+						'hash' => $_hash
+					));
+				} 
+				else
+				{
+					$_hash = $hashCheck->first()->hash;
+				}
+
+				// Set the cookie
+				self::setUserCookie ($_hash);
+			} // If remember
+			return true;
+		}
+		return false;
+	} // login()
+
+	/**
+	 * Show the login form
+	 *
+	 * Displays the login form
+	 *
+	 * @return 	string 	Login Form
+	 * @example /app/core/Templates/Main_Template->left_user()
+	 */
+	public function loginForm($params=array()) 
+	{
+		/**
+		 * Set the output variable
+		 *
+		 * The final output will be built as a variable called
+		 * $text so create it ready to add to
+		 *
+		 * @var null
+		 */
+		$text = '';
+
+		/*
+			Build the form
+
+			All of the form fields are held in functions within this class.
+			We pass in the input variable created above to populate the
+			input field after a failed login
+		*/
+		$text .= '<form id="login_form" action="" method="post" class="req-token">';
+
+		$text .= '<div class="col-12">';
+
+		$text .= '<div class="form-group username">';
+
+		$text .= '<label class="form-control-label" for="username">Username or Email</label>';
+		$text .= '<input type="text" class="form-control" id="username" name="username" aria-describedby="usernameHelp" placeholder="Enter Username or Email" autocomplete="off" required>';
+
+		$text .= '</div>';
+		$text .= '</div>';
+
+		$text .= '<div class="col-12">';
+		$text .= '<div class="form-group password">';
+		$text .= '<label class="form-control-label" for="password">Password</label>';
+		$text .= '<input type="password" class="form-control" id="password" name="password" value="" placeholder="Password">';
+		$text .= '</div>';
+		$text .= '</div>';
+
+		$text .= '<div class="col-12">';
+		$text .= '<div class="form-check $remember_formgroup">';
+		$text .= '<label class="form-control-label custom-control custom-checkbox mb-2 mr-sm-2 mb-sm-0">';
+		$text .= '<input type="checkbox" class="custom-control-input" name="remember">';
+		$text .= '<span class="custom-control-indicator"></span>';
+		$text .= '<span class="custom-control-description">Remember</span>';
+		$text .= '</label>';
+		$text .= '</div>';
+		$text .= '</div>';
+
+		$text .= '<div class="col-12">';
+		if(!isset($params['admin']) && !isset($params['help'])) 
+		{
+		    $text .= '<a href="/Login/">Login Help</a>';
+		}
+
+		$text .= '<button type="submit" class="btn btn-primary btn-sm float-right" name="login" value="login">Login</button>';
+
+		$text .= '</div>';
+		$text .= '</form>';
+
+
+		// Return the output
+		return $text;
+	} // loginForm()
+
+	/**
+	 * Log the user out
+	 *
+	 * Destroys the user session using deleteUserSession () in this class,
+	 * as well as any cookies, plus the cookie data in the 'login_cookie' table
+	 * using deleteUserSession () in this class.
+	 */
+	public function logout()
+	{
+		// Delete the cookie data
+		self::deleteUserCookie (self::getUserSession());
+
+		//Delete the session data
+		self::deleteUserSession (self::getUserSession());
+
+		// Take the user to the home page
+		Redirect::to('/');
+	} // logout()
+
+	/**
+	 * Show the overview
+	 *
+	 * Shows an overview of the section and is infinitely adaptable
+	 *
+	 * @param  array  $params All parameters required to build the page
+	 * @return string         Entire content
+	 */
+	public static function overview ($params=array())
+	{
+		$text =  '';
+
+		$text =  '<b>Users : </b>' . $params['count'] . '<br>';
+
+		return $text;
+	}
+
+	/**
+	 * Show the record details in the admin area
+	 *
+	 * Compiles everything to be shown on the records details page
+	 * in the admin area.
+	 *
+	 * Again, Users is more complicated as most due to the options
+	 * to ban, unban and verify a user as well as changing their
+	 * user group.
+	 *
+	 * @param  array  $params All parameters required to build the page
+	 * @return string         Entire content
+	 */
+	public static function showDetailsAdmin ($params=array())
+	{
+		// Start the output by creating an empty $text variable
+		$text = '';
+
+		/*
+		    If we have performed any user actions, a key of 'posted'
+		    will have been passed in with the array.
+
+		    We create an alert to display details of the change that
+		    has been made so we need to set the correct values for
+		    it based on the name of the change, passed as 'posted'
+		    in the array.
+		 */
+		if (isset($params['posted']))
+		{
+			// Set the most common parameters as defaults
+			$color = 'success';
+			$dismissible = true;
+
+			switch ($params['status']) 
+			{
+				case 'unbanned':
+				    $heading = 'User unbanned!';
+				    $body = 'The User has been unbanned and can now log back in to the site.';
+				    break;
+
+				case 'banned':
+				    $color = 'danger';
+				    $heading = 'User banned!';
+				    $body = 'The User has been banned and can no longer log in to the site.';
+				    break;
+
+				case 'banned':
+				    $heading = 'User verified!';
+				    $body = 'The User has been verified and can now log in to the site.';
+				    break;
+
+				case 'change_level':
+				    $heading = 'User updated!';
+				    $body = 'The User\'s level has been updated.';
+				    break;
+
+				case 'verified':
+				    $heading = 'User verified!';
+				    $body = 'The User has been verified and can now log in to the site.';
+				    break;
+			}
+
+			// Create the alert
+			$text .= Bootstrap::makeAlert(
+				$color,
+				$heading,
+				$body,
+				$dismissible
+			);
+
+		} // If $params['posted']
+
+		/*
+			There are three different button actions at the top of the page that we can use - ban, unban and verify.
+
+			Each of these are form so instead of creating a new form
+			for each one, we just set the parameters and pass it into
+			a single instance of it.
+
+			If a user currently has an ok status (1) all we need to do
+			is show the ban button.
+
+			If the status is not 1, it means the user is either banned
+			or unverified.
+		*/
+
+		if ($params['record']->status !== '1') 
+		{
+			/*
+				Status does not equal 1 so the user is either banned (-1)
+				or unverified (0).
+
+				As there is unlikely to ever be a case where a user is
+				unverified and banned at the same time, we can set the form
+				details for both in here.
+			*/
+
+			// Banned User
+			if ($params['record']->status == '-1')
+			{
+				$color = 'primary';
+				$method = 'unban';
+				$name = 'Un-Ban';
+			}
+
+			// Unverified User
+			if ($params['record']->status == '0')
+			{
+				$color = 'success';
+				$method = 'verify';
+				$name = 'Verify Now';
+			}
+
+		}
+		else
+		{
+			/*
+				Status does equal 1 so all we need is the option to ban them.
+			*/
+			$color = 'danger';
+			$method = 'ban';
+			$name = 'Ban User';
+		}
+
+		// Based on the details set above, build the required form.
+		$text .=  '<form class="form-inline" method="post" action="">';
+		$text .=  '<button type="submit" class="btn btn-'.$color.' btn-sm" name="'.self::$_default_submit_button.'" value="'.$method.'">'.$name.'</button>';
+		$text .= '</form>';
+
+
+		/*
+			Next up we have the form to change the user group
+		*/
 		$text .=  '<form class="form-inline" method="post" action="">';
 
 		// Add the select to hold the User Groups
@@ -1620,7 +2211,7 @@ class Users_Core {
 			$text .=  '<option value="'.$value->id.'"';
 
 			// If the 'value' matches the users id add 'selected'
-			if($value->id == $params->group) {
+			if($value->id == $params['record']->group) {
 				$text .=  ' selected';
 			}
 			// Finish the <option> and add the group name
@@ -1634,701 +2225,268 @@ class Users_Core {
 
 		$text .= '</form>';
 
+		/*
+			Now that the forms are out of the way we can get on with displaying
+			the users details.
 
-
-        // Build the output
-		$text .=  '<b>ID : </b>' . $params->id . '<br>';
-		$text .=  '<b>Full Name : </b>' . $params->firstname . ' ' . $params->lastname . '<br>';
-		$text .=  '<b>Email : </b>' . $params->email . '<br>';
-		$text .= '<b>Username : </b> ' . $params->username . '<br>';
+			There are no restrictions on what can be done here.
+		*/
+		$text .=  '<b>ID : </b>' . $params['record']->id . '<br>';
+		$text .=  '<b>Full Name : </b>' . $params['record']->firstname . ' ' . $params['record']->lastname. '<br>';
+		$text .=  '<b>Email : </b>' . $params['record']->email . '<br>';
+		$text .= '<b>Username : </b> ' . $params['record']->username . '<br>';
 
 		// Return the output
 		return $text;
 
-
-
-    }
-
-}
-
-
-
-
-
-
-
-
-
-
-/app/core/Validate.php
---------------------------------------------------------------------------------------------
-<?php
-
-class Validate {
-    private $_passed = false,
-            $_errors = array(),
-            $_db = null;
-
-    public function __construct() {
-        $this->db = DB::dbConnect();
-    }
-    /**    check()
-     *
-     *    Checks the validation rules passed in
-     *
-     *    @params     source
-     *    @params     items
-     *
-     *    Takes the data passed in the source (usually $_POST) and
-     *    checks each one against it's list of criteria
-     *
-     *    The validation uses $GLOBALS set in /app/core/config_files/forms.php
-     *
-     *    Each field is passed to this function as '$items' where the input name
-     *    is matched up with it's respective $GLOBALS array
-     *    ----------------------------------------------------------
-     *    Example validation for 'username' and 'email'
-     *
-     *    $validation = $validate->check(
-     *         $_POST,
-     *         array(
-     *            'username' => Globals::get('forms/user/username'),
-     *            'email' => Globals::get('forms/user/username', 'email'),
-     *         )
-     *    );
-     *
-     *    This is checking $_POST data against the validations rules
-     *    --------------------------------------------------------------
-     *
-     *    Looking at 'username', once we have assigned Globals::get('forms/user/username')
-     *    to it, we have
-     *    'username' => array(
-     *        'info' => 'Usernames must be between 6 and 20 characters long, using only letters and numbers,
-     *        'error' => 'You must enter a valid username between 6 and 20 characters,
-     *        'validation' => array(
-     *            'field_name' => 'username',
-     *            'required' => true,
-     *            'min' => 6,
-     *            'max' => 20,
-     *            'preg_match' => 'username',
-     *            'unique' => 'users',
-     *        ),
-     *    ),
-     *
-     *    We then loop through the 'validation' element and check them against what has been posted
-    **/
-    public function check ($source, $items = array()) {
-
-        /**    Loop through the items
-         *
-         *    Using the 'username' example above, this would give us
-         *
-         *    $item = 'username'    $rule = 'info'
-         *    $item = 'username'    $rule = 'help'
-         *    $item = 'username'    $rule = 'error'
-         *    $item = 'username'    $rule = 'validation'
-         *
-        **/
-        foreach ($items as $item => $rules) {
-
-
-            /**    Loop through validation rules
-             *
-             *    Using the 'username' example above, this would give us
-             *
-             *    $rule = 'field_name'     $rule_value = 'username'
-             *    $rule = 'required'       $rule_value = 'true'
-             *    $rule = 'min'            $rule_value = 6
-             *    $rule = 'max'            $rule_value = 20
-             *    $rule = 'max'            $rule_value = 20
-             *    $rule = 'preg_match'     $rule_value = 'username'
-             *    $rule = 'unique'         $rule_value = 'users'
-             *
-            **/
-	    if(isset($rules['validation'])){
-		    foreach ($rules['validation'] as $rule => $rule_value) {
-			// Check if the field has been posted
-			/*
-			 *    Using the 'username' example
-			 *    $source was set to $_POST when the function was called
-			 *    $item has been set to 'username' in the first foreach
-			 *
-			 *    So $source[$item] = $_POST['username']
-			 *
-			 *    If it is set, we set it to $value, trimming any whitespace
-			 *    so if the posted 'username' was 'Deadpool', we would now have
-			 *    $value = 'Deadpool'
-			 *
-			 *    If there is no matching post data set, we set $value to null
-			 *
-			**/
-			if(isset($source[$item])) {
-			    $value = trim($source[$item]);
-			} else {
-			    $value = null;
-			}
-			// Convert $item to HTML entities
-			$item = escape($item);
-
-
-
-
-			if ($rule === 'required' && (empty($value) || !isset($value))) {
-			    if(isset($rules['error'])) {
-				$this->addError($rules['error'], $item);
-			    } else {
-				$this->addError(ucfirst($item) . " is required", $item);
-			    }
-
-			}  else if(!empty($value)) {
-			    switch ($rule) {
-				case 'min':
-				    if (strlen($value) < $rule_value) {
-					$this->addError("The {$item} must be a minimum of {$rule_value} characters", $item);
-				    }
-				break;
-
-				case 'max':
-				    if (strlen($value) > $rule_value) {
-					$this->addError("The {$item} must be a maximum of {$rule_value} characters", $item);
-				    }
-				break;
-
-				case 'matches':
-				    if ($value != $source[$rule_value]) {
-					if(isset($rules['error'])) {
-					    $this->addError($rules['error'], $item);
-					} else {
-					    $this->addError("{$rule_value} must match {$item}", $item);
-					}
-
-				    }
-				break;
-
-				case 'unique':
-				    $check = $this->db->get($rule_value, array($item, "=", $value));
-				    if ($check->count()) {
-					$this->addError(ucfirst($item) . " already exists", $item);
-				    }
-				break;
-
-			
-				case 'preg_match':
-				if (!preg_match(Globals::get('validation_rules/'.$rule_value), $value)) {
-				    if(isset($rules['error'])) {
-					$this->addError($rules['error'], $item);
-				    } else {
-					$this->addError("{$rule_value} must preg match {$item}", $item);
-				    }
-
-				}
-				break;
-
-				case 'filter':
-				    if($rule_value == 'email') {
-					if (!filter_var($value, FILTER_VALIDATE_EMAIL)) {
-					    if(isset($rules['error'])) {
-						$this->addError($rules['error'], $item);
-					    } else {
-						$this->addError("The {$rule_value} did not match the required filter.", $item);
-					    }
-					}
-				    }
-				break;
-
-				default:
-				    # code...
-				break;
-			    }
-
-			}
-		    }
-	    }
-        }
-        if (empty($this->_errors)) {
-           $this->_passed = true;
-        }
-
-        return $this;
-    }
-
-    private function addError($error, $field) {
-        $this->_errors[$field] = $error;
-    }
-
-    public function errors() {
-        return $this->_errors;
-    }
-
-    public function passed() {
-        return $this->_passed;
-    }
-}
-
-
-
-
-
-
-
-
-
-/app/core/Form_Functions.php
---------------------------------------------------------------------------------------------
-<?php
-
-/**
- * Form Functions
- *
- * Contains functions for quick building and processing of forms
- *
- * @package Core
- * @author  Steve Ball <steve@follyball.co.uk>
- * @copyright Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
- */
-class Form_Functions {
-
-    /**
-	 * Validate posted data
+	} // showDetailsAdmin ()
+	
+	/**
+	 * Show the reset password form
 	 *
-	 * Validates any $_POST data submitted by a form against a
-	 * specific set of rules stored in /app/core/config_files/validation.php
-	 *
-	 * The posted data is looped through and for each one we check to see if
-	 * a validation rule exists.
-	 *
-	 *
-	 * For this to work, it is best that the input name="" matches the database
-	 * column
-	 *
-	 * @param  array  	$data        	$_POST data
-	 * @param  string 	$globals_path 	The Gloabals::get() path
-	 * @return boolean/errors           True/False insert status and errors
-	 * @example postValidate($postdata, 'validation/user/')
+	 * Displays the reset password form as well as any login based Session::flashes
+	 * @return 	string 	Reset Password Form
+	 * @example /app/views/users/resetpassword.php
 	 */
-	public static function postValidate($data, $globals_path)
+	public static function resetPasswordForm() 
 	{
-		/*
-			Loop through the posted data
 
-			If we have
-			'Username' => 'MrUser',
-			'FirstName' => 'Mister',
-			'LastName' => 'User'
-
-			And the validation paths for each were
-			'validation/user/Username',
-			'validation/user/FirstName',
-			'validation/user/LastName'
-
-			We would have the following in the array
-
-			$validate_array = array (
-				'Username' => 'validation/user/Username',
-				'FirstName' => 'validation/user/FirstName',
-				'LastName' => 'validation/user/LastName'
-
-			)
-
+		/**
+		 * Set the output variable
+		 *
+		 * The final output will be built as a variable called
+		 * $text so create it ready to add to
+		 *
+		 * @var null
 		 */
-
-
-        if(is_array($globals_path))
-        {
-            foreach ($data as $post_data => $input)
-    		{
-
-                if(isset($globals_path[$post_data]))
-                {
-                    $validate_array[$post_data] = $globals_path[$post_data];
-                }
-
-    		}
-
-        } else {
-            foreach ($data as $post_data => $input)
-    		{
-    			$validate_array[$post_data] = Globals::get($globals_path.$post_data);
-    		}
-        }
-
-
-
-		// Create a new empty object to hold any validation data
-		$valid = (object)array();
-
-		// Open a new instance of the Validate() class
-		$validate = new Validate ();
+		$text = '';
 
 		/*
-			Finally we pass the $_POST data and the validation array
-			into Validate->check() where the two are checked against each
-			other.
-		 */
-		$validation = $validate->check(
-			$data,
-			$validate_array
+			Build the form
+
+			All of the form fields are held in functions within this class.
+			We pass in the input variable created above to populate the
+			input field after a failed login
+		*/
+		$text .= '<form id="reset_password_form" action="" method="post" class="req-token">';
+
+		$text .= '<div class="row">';
+
+		$text .= '<div class="col-lg-6">';
+		
+		$text .= Form_Functions::createFormGroup (
+			'password',
+			'password',
+			''
 		);
+		
+		$text .= '	</div>';
+		$text .= '<div class="col-lg-6">';
+		$text .= Form_Functions::createFormGroup (
+			'password',
+			'confirm_password',
+			''
+		);
+		
+		$text .= '	</div>';
+		$text .= '</div><!-- .row -->';
 
-		/*
-			We can use Validate->passed to check to see if the validation was
-			succesful.
-			If it was just add ->status to the $valid array and set
-			it to true.
-			If validation was not succesful add ->status to the $valid array and set it to false and also add an errors as ->error.
-		 */
-		if($validation->passed()) {
-			$valid->status = true;
-		} else {
-			$valid->status = false;
-			$valid->error = $validation->errors();
+		$text .= '<div class="col-12">';
+		$text .= '<button type="submit" class="btn btn-primary btn-sm float-right" name="reset_password_submit" value="Reset">Reset</button>';
+		$text .= '</div>';
+		$text .= '</form>';
+		// Return the output
+		return $text;
+		
+	} // resetPasswordForm()
 
-		}
-
-		// Return the array
-		return $valid;
-	} // postValidate ()
-
-    /**
-	 * Set error validation for a form field
-	 *
-	 * Adds 'has-danger' to a inputs form-group if any validation errors
-	 * exist. This is called when building the form.
-	 *
-	 * @param 	string 			$value  	Name of the form field
-	 * @param 	array 			$errors 	List of errored fields
-	 * @return 	string/null 	'has-danger' if required
-	 */
-	public static function setValidation ($value, $errors=null)
+	/**
+	 * Shows the form to request an email to reset a password
+         */
+	public static function resetPasswordRequest() 
 	{
-		/*
-			We only do anything if $errors exists and the name of
-			the field ($value) is in the array
+
+		/**
+		 * Set the output variable
+		 *
+		 * The final output will be built as a variable called
+		 * $text so create it ready to add to
+		 *
+		 * @var null
 		 */
-		if(isset($errors) && isset($errors[$value]))
-		{
-			// An error for the field exists so retun 'has-danger'
-			return 'is-invalid';
-		} else
-		{
-			// No error for the field exists so return nothing
-			return 'is-valid';
-		}
-	} // setFormGroups()
+		$text = '';
+
+		/*
+			Build the form
+
+			All of the form fields are held in functions within this class.
+			We pass in the input variable created above to populate the
+			input field after a failed login
+		 */
+		$text .= '<form id="reset_password" action="" method="post" class="req-token">';
+
+		$text .= '  <div class="col-12">';
+		$text .=        Form_Functions::createFormGroup (
+				    'text',
+				    'username',
+				    $value = null,
+				    $validation_class = null,
+				    $help = 'You can user your username or email address',
+				    $data = null,
+				    $label = true
+		);
+		
+		$text .= '  </div>';
+
+		$text .= '  <div class="col-12">';
+		$text .= '      <button type="submit" class="btn btn-primary btn-sm float-right" name="reset_password_user" value="Reset">Reset</button>';
+		$text .= '  </div>';
+		$text .= '</form>';
+
+		// Return the output
+		return $text;
+    } // loginForm()
+
+	/* 
+		Quick Forms
+	*/
+	public static function register_form($_errors=null)
+	{
+		return self::default_form($params=array('errors' => $_errors, 'name' => 'register', 'passwords' => 'true', 'terms' => 'true'));
+	}
+
+	public static function admin_create_form($_errors=null)
+	{
+		return self::default_form($params=array('errors' => $_errors, 'name' => 'create', 'passwords' => 'true'));
+	}
+
+	public static function admin_edit_form ($_record, $_errors=null)
+	{
+		return self::default_form($params=array('errors' => $_errors, 'name' => 'update', 'record' => $_record));
+	}
+
+	public static function edit_form ($_record, $_errors=null)
+	{
+		return self::default_form($params=array('errors' => $_errors, 'name' => 'update', 'record' => $_record));
+	}
+
+
+	###############################################################################
+	#  To be moved to another model
+	###############################################################################
+	    /**
+	 * Check the user hash
+	 *
+	 * Checks an email/hash combination for a matching
+	 * value in the user_hash table, returning the count
+	 *
+	 * @param  email 	$email 	Users Email address
+	 * @param  sha256 	$hash  	Stored hash
+	 * @return int        		Count of returned results
+	 * @example /controllers/users/home->verify()
+	 *
+	 */
+	public function checkUserHash ($email, $hash)
+	{
+        return self::db()->query("SELECT * FROM user_hash WHERE email = ? AND hash = ?", array($email, $hash))->count();
+    } // checkUserHash()
+	
+	
+	/**
+	 * Get the value of the user cookie
+	 * @return string 	Cookie Value
+	 */
+	public function getUserCookie ()
+	{
+        return Cookie::get(Globals::get('user/cookie_name'));
+    } // getUserCookie
 
     /**
-     * Creates a complete form group and form elements
-     *
-     * @param  string       $type               The type of input field
-     * @param  string       $field_name         The input field name
-     * @param  string       $value              Value for the input
-     * @param  string       $validation_class   Validation style to placed on the input
-     * @param  string       $help               Optional help text
-     * @param  array        $data               Data to fill a select, checkboxes or radio
-     * @param  boolean      $label              Whether to show the form label
-     *
-     * @return string       Complete form group
-     */
-    public static function createFormGroup ($type, $field_name, $value, $validation_class = null, $help = null, $data = null, $label = true)
-    {
-        if($type=='text' || $type=='password' || $type=='date')
-        {
-            $text  = '<div class="form-group">';
-            $text .= ($label) ? self::createLabel ($field_name) : '';
-            $text .= '	<input type="' . $type . '" class="form-control '. $validation_class .'" id="'.$field_name.'" name="'.$field_name.'" placeholder="Enter '.ucfirst($field_name).'" value="'.$value.'" autocomplete="off"';
+	 * Check if a remember me cookie exists
+	 * @return boolean Cookie existence
+	 */
+	public function hasUserCookie ()
+	{
+        return (Cookie::exists(Globals::get('user/cookie_name'))) ? true : false ;
+    } // hasUserCookie()
 
-            if($help)
-            {
-                $text .= 'aria-describedby="'.$field_name.'Help" ';
-
-            }
-
-            $text .= '>';
-
-            if($help) {
-                $text .= '		<small id="'.$field_name.'Help" class="form-text text-muted">'.$help.'</small>';
-            }
-
-            $text .= '		</div>';
-        }
-
-        if($type=='select')
-        {
-
-            $text  = '<div class="form-group">';
-            $text .= ($label) ? self::createLabel ($field_name) : '';
-
-            $text .= '  <select class="form-control '. $validation_class .'" id="'.$field_name.'" name="'.$field_name.'">';
-
-            if(!$value)
-            {
-                $text .= '<option value="">Please Select.....</option>';
-            }
-            foreach ($data as $key => $type) {
-                $text .= '<option value="'.$key.'"';
-
-                if ($value == $key) {
-                    $text .= ' selected';
-                }
-                $text .= '>'.$type.'</option>';
-            }
-            $text .= '  </select>';
-
-            if($help) {
-                $text .= '		<small id="'.$field_name.'Help" class="form-text text-muted">'.$help.'</small>';
-            }
-
-            $text .= '		</div>';
-
-        }
-
-        if($type=='checkbox')
-        {
-            $text .= ($label) ? self::createLabel ($field_name) : '';
-            $text  .= '<div class="form-group">';
-
-            foreach ($data as $key => $product)
-            {
-                $checked = (isset($value[$product]) && $value[$product] == '1') ? 'checked' : '' ;
-
-                $text .= '<label class="custom-control custom-checkbox" for="'.$product.'">';
-                $text .= '<input type="checkbox" class="custom-control-input" id="'.$product.'" name="'.$product.'" value="1" ' . $checked . '>';
-                $text .= '<span class="custom-control-indicator"></span>';
-                $text .= '<span class="custom-control-description">'.strtoupper($product).'</span>';
-                $text .= '</label>';
-            }
-
-            $text .= '		</div>';
-        }
-
-        if($type=='textarea')
-        {
-            $text  = '<div class="form-group">';
-            $text .= ($label) ? self::createLabel ($field_name) : '';
-            $text .= '	<textarea  class="form-control '. $validation_class .'" id="'.$field_name.'" name="'.$field_name.'" rows="3" ';
-
-            if($help)
-            {
-                $text .= 'aria-describedby="'.$field_name.'Help" ';
-            }
-
-            $text .= '>';
-            $text .= $value;
-            $text .= '</textarea>';
-            if($help)
-            {
-                $text .= '		<small id="'.$field_name.'Help" class="form-text text-muted">'.$help.'</small>';
-            }
-
-            $text .= '		</div>';
-        }
-
-        return $text;
-    }
 
     /**
-     * Create a form label
-     *
-     * Returns a fully compliant form label for a specific field
-     *
-     * @param  string   $field_name     The name of the input field
-     * @return string             Form Label
+     * Set the user session
+     * @param  int 	$user 	User ID
      */
-    public static function createLabel ($field_name)
+    public function setUserSession ($user)
     {
-        return '<label class="form-control-label" for="'.$field_name.'">'.ucwords(str_replace("_", " ", $field_name)).'</label>';
-    } // createLabel ()
+        Session::put(Globals::get('user/user_session'), $user->id);
+        Session::put(Globals::get('user/user_group'), $user->group);
+    } // setUserSession()
+
+
+
+    # TODO: Replace these
+
+
 
     /**
-     *  Set a user group Session::flash message
-     *
-     *	Sets a user specific usergroup Session::flash message, to be displayed as
-     *	a Bootstrap alert.
-     *
-     *	The session name will always be set as 'usergroup' and the type of alert
-     *	and message to create is passed in as $type. You can also add specific text
-     *	to the alert body.
-     *
-     * 'create_errors'          Errors created during an insert
-     * 'create_success'         A User Group has been created
-     * 'delete_success'         A User Group create attempt failed
-     * 'generic_error'			A generic error
-     * 'no_change'				A profile update had no new data
-     * 'no_group'               The User Group does not exist
-     * 'token'					The token check failed
-     * 'update_errors'			A user group update has failed
-     * 'update_success'			A user group update has been succesful
-     *
-     *
-     *
-     * $text
-     * Any additional text to add to the body of the message
-     *
-     * @param  string 	$session The name of the session
-     * @param  string 	$type    The type of message we are setting
-     * @param  string 	$text    Additional alert body text
-     * @return $_SESSION variabloe containing a Bootstrap alert
-     *
+     * Set the user cookie
+     * @param string $hash The hash value stored in gthe login cookie table
      */
-    public static function crudAlert ($title, $session, $type, $text=null)
+    public function setUserCookie ($hash)
     {
-        /*
-            We use four variables within this function
-            $color 			is the Bootstrap alert color class
-            $heading 		the title of the alert
-            $body 			the body of the alert
-            $dismissible 	whether or not the alert is dismissible
+        Cookie::put(Globals::get('user/cookie_name'), $hash, Globals::get('user/cookie_expiry'));
+    } // setUserCookie()
 
-            $color and $dismissible can be both set to defaults but
-            the others are unique to each type.
-        */
-        $color = 'info';
-        $dismissible = false;
+    /**
+     * Delete the user cookie
+     *
+     * As well as deleting the cookie, this also removes the
+     * record from then login_cookie table
+     *
+     * @param  int 	$user 	User ID
+     */
+    public function deleteUserCookie ($user)
+    {
+        // Delete the cookie
+        Cookie::delete(Globals::get('user/cookie_name'));
 
-
-        /*
-            Use a switch() on $type to specify which message to set
-            to $heading and $body and override $color and
-            $dismissible if required
-        */
-        switch ($type) {
-
-            case 'create_success':
-                $color = 'success';
-                $heading = 'Success!';
-                $body = 'The ' . $title . ' has been created.';
-                $dismissible = false;
-                break;
-
-            case 'create_errors':
-                $color = 'danger';
-                $heading = 'Error! <br>The ' . $title . ' has not been created.';
-                $body = 'The following errors need to be rectified.....'.$text;
-                $dismissible = true;
-                break;
-
-            case 'update_success':
-                $color = 'success';
-                $heading = 'Success!';
-                $body = 'The ' . $title . ' has been updated.';
-                $dismissible = true;
-                break;
-
-            case 'update_errors':
-                $color = 'danger';
-                $heading = 'Error! <br>The ' . $title . ' has not been updated.';
-                $body = 'The following errors need to be rectified.....'.$text;
-                $dismissible = true;
-                $dismissible = true;
-                break;
-
-            case 'delete_success':
-                $color = 'success';
-                $heading = 'Success!';
-                $body = 'The ' . $title . ' has been deleted.'.$text;
-                $dismissible = false;
-                break;
-
-            case 'delete_warning':
-                $color = 'danger';
-                $heading = $title . ' Delete!';
-                $body = 'You are about to permanantly delete this user group. This cannot be reversed.<br>'.$text;
-                $dismissible = false;
-                break;
-
-            case 'no_change':
-                $heading = 'Info! <br>The ' . $title . ' has not been updated.';
-                $body = 'The data posted matches the existing ' . $title . ' details so was not processed';
-                $dismissible = true;
-                break;
-
-            case 'not_found':
-                $color = 'warning';
-                $heading = 'The ' . $title . ' not Found!.';
-                $body = 'We could not find a ' . $title . ' matching the criteria.';
-                $dismissible = false;
-                break;
-
-            case 'token':
-                $color = 'warning';
-                $heading = Globals::get('forms/token_fail/title');
-                $body = Globals::get('forms/token_fail/message');
-                $dismissible = true;
-                break;
-
-            case 'generic_error':
-                $color = 'danger';
-                $heading = Globals::get('forms/generic_error/title');
-                $body = Globals::get('forms/generic_error/message');
-                $dismissible = true;
-                break;
-
-            default:
-                # code...
-                break;
-        }
-
-        // Set the Session::flash() using Bootstrap::makeAlert() as the content
-        Session::flash(
-            $session,
-            Bootstrap::makeAlert(
-                $color,
-                $heading,
-                $body,
-                $dismissible
-            )
+        // Delete the record from the table
+        DB::dbConnect()->query(
+          "DELETE FROM login_cookie WHERE user_id = ?",
+          array($user)
         );
-    } // crudAlert ()
-
+    } // deleteUserCookie()
 
     /**
-     * Set form post error messages
-     *
-     * Builds a <ul> containing a separate <<li> for each error
-     * messsage passed in.
-     *
-     * @param array     $errors     Form post errors
-     * @return string   A <ul> of errors
+     * Delete the user session
+     * @param  int 	$user 	User ID
      */
-    public static function setErrorMessage ($errors)
+    public function deleteUserSession ($user)
     {
-        // Start the output
-        $_output = '<ul>';
+        Session::delete(Globals::get('user/user_session'));
+        Session::delete(Globals::get('user/user_group'));
+    } // deleteUserSession()
+	
+		/**
+	 * Get the value of the user session
+	 * @return string 	Session Value
+	 */
+	public function getUserSession ()
+	{
+		return Session::get(Globals::get('user/user_session'));
+	} // getUserSession
+	
 
-        // Loop through each error and add them as a <li>
-        foreach ($errors as $key => $value)
-        {
-            $_output .= '<li>';
-            $_output .= $value;
-            $_output .= '</li>';
-        }
-
-        // End the output
-        $_output .= '</ul>';
-
-        // Return the output
-        return $_output;
-    }
-} // setErrorMessage ()
-
-
-
-
-
-
-
-
-
-
-/app/core/config_files/validation_rules.php - replaces /app/core/config_files/validation.php
---------------------------------------------------------------------------------------------
-<?php
-
-$GLOBALS['validation_rules'] = array(
-        // Username - letters, numbers and _ only
-        'username' => '/^[a-zA-Z]\w*[a-zA-Z0-9_]$/',
-
-);
+    #=================================================
+    #   Possibly remove
+    #=================================================
+	/**
+	 * Check if a user session exists
+	 * @return boolean User Session existence
+	 */
+	public function hasUserSession ()
+	{
+        return (Session::exists(Globals::get('user/user_session'))) ? true : false ;
+    } // hasUserSession()
 
 
 
@@ -2336,28 +2494,56 @@ $GLOBALS['validation_rules'] = array(
 
 
 
+}
 
 
 
-/app/views/admin/create.php
---------------------------------------------------------------------------------------------
+
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+
 <?php
 
 /**
-* Collect the passed in data and turn it into an object
-* @var array
-*/
+ * Users Profile View
+ *
+ *  View for anything passed to the users profile page.
+ *
+ * @package 	Core
+ * @author  	Steve Ball <steve@follyball.co.uk>
+ * @copyright 	Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
+ * @example 	/app/controllers/users/profile.php->index()
+ * @link 		http://site.com/Users/Profile/{username}/
+ * @link 		http://site.com/Users/Profile/{user id}/
+ * @link 		http://site.com/Users/Profile/{user email}/
+ *
+ */
+
+require_once '../app/init.php';
+
+/**
+ * Set the page name
+ * @var string
+ */
+$page_name = 'User Profile';
+
+
 $data = (object)$data;
 
-/*
-	Set the name of the core class based on $data->class and create a new
-	instance of it called $model
-*/
-$core_model = $data->class.'_Core';
-$model = new $core_model();
+/**
+ * Set any errors passed in via $data to $errors
+ * @var array
+ */
+//$errors = $data['errors'];
 
-// Set the page name by simply appending $data->page_title to 'Create'
-$page_name = 'Create ' . $data->page_title;
+/**
+* Collect the any data passed in as the 'display' part
+* of the array and turn it into an object
+* @var array
+*/
+//$display = (object)$data['display'];
 
 /**
  * Build the output string that will be passed to the template
@@ -2365,46 +2551,19 @@ $page_name = 'Create ' . $data->page_title;
  */
 $output = '';
 
-// We display the whole page in one card so set the outer and body for it
-$output .= '<div class="card mb-3 border-dark"><div class="card-body">';
 
-
-/*
-    If there is a flash Alert for errors or messages, show it here.
-    This will primarily be used to still show data if there has been a
-    Reditect meaning all post data is lost.
- */
-if (Session::exists($data->class))
-{
-	$output .= '<div class="col-sm-12">';
-	$output .= Session::flash($data->class);
-	$output .= '</div>';
-}
-
-/*
-	$_POST and Error checks
-
-	If the update form has been posted, $data->posted will be set to true.
-
-	If this is the case, if there are no errors, we assume that the update has been successful and return a success message, otherwise we output the error.
-
-	If the form has not been posted (initial viewing of the page) and the requested
-	record (User) cannot be found, this will also set a record against $data->errors
-	so we check if that is set as well as whether the form has been posted.
-
-	Whatever we return, it will be shown as a bootstrap alert so as we go through,
-	we set the correct colour, heading and body for this.
-*/
 if ($data->posted)
 {
 	// Data has been posted so check to see if there are any errors
 	if (!$data->errors)
 	{
-		// There are no errors so set the values for the alert
+        // There are no errors so set the values for the alert
 		$color = 'success';
-		$heading = $data->page_title . ' created!';
-		$body = 'The ' . $data->page_title . ' was successfully created.';
+		$heading = 'Updated!';
 		$dismissible=true;
+
+		$body = 'Your '.$data->method.' was successfully updated.';
+
 
 	} else
 	{
@@ -2418,7 +2577,7 @@ if ($data->posted)
 			$heading and $dismissible are the same for each of these so
 			we set them first.
 		*/
-		$heading = $data->page_title . ' not created!';
+		$heading = 'Not updated!';
 		$dismissible=true;
 
 		if(!is_array($data->errors))
@@ -2436,173 +2595,19 @@ if ($data->posted)
 				case 'token' :
 					$color = 'warning';
 					$body = Globals::get('forms/token_fail/message');
-					break;
-
-			}
-		} else
-		{
-			/*
-				$data->errors is an array so the error is down to validation.
-
-				Set the color to danger andd for the body, we use Form_Functions::setErrorMessage () 
-				to set a <ul> of the error messages
-			*/
-			$color = 'danger';
-			$body = Form_Functions::setErrorMessage ($data->errors);
-		}
-	}
-	// As the form has been posted or there are other errors, we now need to show the alert
-	$output .= Bootstrap::makeAlert(
-		$color,
-		$heading,
-		$body,
-		$dismissible
-	);
-}
-
-// Show the form
-$output .= $core_model::admin_create_form($data->errors);
-
-
-// Close the card
-$output .= '</div></div>';
-
-// Construct the template
-$template = new Admin_Template(
-    $output,
-    $page_title = $page_name
-);
-
-
-
-
-
-
-
-
-
-/app/views/admin/edit.php
---------------------------------------------------------------------------------------------
-<?php
-
-/**
-* Collect the passed in data and turn it into an object
-* @var array
-*/
-$data = (object)$data;
-
-/*
-	Set the name of the core class based on $data->class and create a new
-	instance of it called $model
-*/
-$core_model = $data->class.'_Core';
-$model = new $core_model();
-
-// Set the page name by simply appending $data->page_title to 'Edit'
-$page_name = 'Edit ' . $data->page_title;
-
-// By default we expect to show the update for so initially set it to true
-$show_form = true;
-
-/**
- * Build the output string that will be passed to the template
- * @var string
- */
-$output = '';
-
-// We display the whole page in one card so set the outer and body for it
-$output .= '<div class="card mb-3 border-dark"><div class="card-body">';
-
-
-/*
-    If there is a flash Alert for errors or messages, show it here.
-    This will primarily be used to still show data if there has been a
-    Reditect meaning all post data is lost.
- */
-if (Session::exists($data->class))
-{
-	$output .= '<div class="col-sm-12">';
-	$output .= Session::flash($data->class);
-	$output .= '</div>';
-}
-
-/*
-	$_POST and Error checks
-
-	If the update form has been posted, $data->posted will be set to true.
-
-	If this is the case, if there are no errors, we assume that the update has been successful and return a success message, otherwise we output the error.
-
-	If the form has not been posted (initial viewing of the page) and the requested
-	record (User) cannot be found, this will also set a record against $data->errors
-	so we check if that is set as well as whether the form has been posted.
-
-	Whatever we return, it will be shown as a bootstrap alert so as we go through,
-	we set the correct colour, heading and body for this.
-*/
-if ($data->posted || $data->errors)
-{
-	// Data has been posted so check to see if there are any errors
-	if (!$data->errors)
-	{
-		// There are no errors so set the values for the alert
-		$color = 'success';
-		$heading = $data->page_title . ' updated!';
-		$body = 'The ' . $data->page_title . ' was successfully updated.';
-		$dismissible=true;
-
-	} else
-	{
-		/*
-			There are errors so we need to check what the error is and
-			set the relevant info for the alert.
-
-			If an error is due to failing validation, $data->error will be an array
-			of the errors, otherwise it will be a simple string explaining the error.
-
-			$heading and $dismissible are the same for each of these so
-			we set them first.
-		*/
-		$heading = $data->page_title . ' not updated!';
-		$dismissible=true;
-
-		if(!is_array($data->errors))
-		{
-			/*
-				$data->errors is not an array so the error is down to something
-				other than validation.
-
-				This is specified by the string that $data->errors contains so we
-				run a switch() statement to create the correct alert values.
-
-			*/
-			switch ($data->errors)
-			{
-				case 'token' :
-					$color = 'warning';
-					$body = Globals::get('forms/token_fail/message');
-					break;
-
-				case 'notfound' :
-					$color = 'info';
-					$heading = $data->page_title . ' not found!';
-					$body = 'The ' . $data->page_title . ' was not found, please select one from the list';
-					$dismissible = false;
-					// As the record was not found, we set the form to false
-					$show_form = false;
 					break;
 
 				case 'nochange' :
 					$color = 'info';
-					$body = 'You did not change any data for the  ' . $data->page_title;
+					$body = 'You did not change any data';
 					break;
 			}
 		} else
-		{	
+		{
 			/*
 				$data->errors is an array so the error is down to validation.
 
-				Set the color to danger andd for the body, we use Form_Functions::setErrorMessage () 
+				Set the color to danger andd for the body, we use Form_Functions::setErrorMessage ()
 				to set a <ul> of the error messages
 			*/
 			$color = 'danger';
@@ -2619,279 +2624,72 @@ if ($data->posted || $data->errors)
 	);
 }
 
-/* 
-	If $show_form is still set to true, add it to the output.
- */
-if($show_form)
-{
-	$output .= $core_model::admin_edit_form($data->record, $data->errors);
-}
-
-
-// Close the card
-$output .= '</div></div>';
-
-// Construct the template
-$template = new Admin_Template(
-    $output,
-    $page_title = $page_name
-);
-
-
-
-
-
-
-
-
-
-/app/views/admin/list.php
---------------------------------------------------------------------------------------------
-<?php
-
 /**
-* Collect the passed in data and turn it into an object
-* @var array
-*/
-$data = (object)$data;
-
-$core_model = $data->class.'_Core';
-
-$page_name = 'Listing ' . $data->page_title .  '\'s';
-
-/**
- * Build the output string that will be passed to the template
- * @var string
+ * Check if there is any valid user data
+ *
+ * Aside from the Session::flash, we need to show either the users
+ * profile, details, an update form or nothing.
+ *
+ * If no valid user data is passed in, we will show nothing other
+ * than the Session::flash set above.
+ *
+ * If a valid user is passed in we will show their update form if
+ * $display->profile = 'form' from the controller  Otherwise it will show
+ * the users profile.
+ *
+ * @var array
  */
-$output = '';
 
-// We display the whole page in one card so set the outer and body for it
-$output .= '<div class="card mb-3 border-dark"><div class="card-body">';
-
-/*
-    If there is a flash Alert for errors or messages, show it
- */
-if (Session::exists($data->class)) {
-     $output .= '<div class="col-sm-12">';
-	 $output .= Session::flash($data->class);
-	 $output .= '</div>';
- }
-
-// Start building the table to hold the u list
-$output .= '<table class="table">';
-
-
-$output .= '<thead class="thead-inverse">';
-$output .= '  <tr>';
-
-foreach ($data->table_rules as $header => $th) {
-	$th = (isset($th['th']['alias'])) ? $th['th']['alias'] : $header;
-	$output .= '	<th>'.$th.'</th>';
-}
-
-if(isset($data->buttons))
-{
-	$output .= '	<th>edit</th>';
-	$link_field = $data->buttons['link_field'];
-}
-$output .= '	<th></th>';
-
-$output .= '  </tr>';
-$output .= '</thead>';
-
-$output .= '<tbody>';
-
-
-foreach ($data->list as $row => $value)
-{
-	 /*
-	   For each new user, create a new row, creating an id="" out of the user
-	    group name for future javascript functions
-	 */
-	$output .= '<tr id="'.$value->id.'">';
-
-	foreach ($data->table_rules as $body => $td) 
-	{
-		$output .= '<td>';
-
-		if($td['td']['type'] == 'text')
-		{
-			$output .= $value->$body;
-		}
-
-		if($td['td']['type'] == 'link')
-		{
-			$output .= '<a href="';
-			$output .= '/Admin/' . $data->class . '/Edit/';
-			$output .= $value->$td['td']['link_field'] ;
-			$output .= '">';
-			$output .= $value->$body;
-			$output .= '</a>';
-		}
-
-		if($td['td']['type'] == 'date')
-		{
-			$output .= date_format (new DateTime($value->$body), $td['td']['format']);
-		}
-
-		$output .= '</td>';
-	}
-
-        if(isset($data->buttons))
-        {
-		$output .= '	<td>';
-		
-		foreach ($data->buttons['items'] as $button) 
-		{
-
-			$output .= '<a href="/Admin/' . $data->class . '/'.ucfirst($button).'/'.$value->$link_field.'">';
-
-			$output .= '<i class="';
-
-			$output .= 'fa fa-'.Globals::get('forms/crud_icons/'.$button.'/name') . ' ';
-			$output .= 'text-'.Globals::get('forms/crud_icons/'.$button.'/color') . ' ';
-			$output .= ' mr-1" aria-hidden="true"></i>';
-
-			$output .= '</a>';
-		}
-		
-		$output .= '</td>';
-        }
-
-     	// Close the row
-     	$output .= '</tr>';
-}
-// Finish of all remaining table tags
-$output .= '</tbody>';
-
-$output .= '</table>';
-
-
-// Close the card
-$output .= '</div></div>';
-
-// Construct the template
-$template = new Admin_Template(
-	$output,
-	$page_title = $page_name
-);
-
-
-
-
-
-
-
-
-
-/app/views/admin/view.php
---------------------------------------------------------------------------------------------
-<?php
-
-/**
-* Collect the passed in data and turn it into an object
-* @var array
-*/
-$data = (object)$data;
-
-/*
-	Set the name of the core class based on $data->class and create a new
-	instance of it called $model
-*/
-$core_model = $data->class.'_Core';
-$model = new $core_model();
-
-// Set the page name by simply appending $data->page_title to 'Delete'
-$page_name = 'View ' . $data->page_title;
-
-/**
- * Build the output string that will be passed to the template
- * @var string
- */
-$output = '';
-
-// We display the whole page in one card so set the outer and body for it
-$output .= '<div class="card mb-3 border-dark"><div class="card-body">';
-
-
-/*
-    If there is a flash Alert for errors or messages, show it here.
-    This will primarily be used to still show data if there has been a
-    Reditect meaning all post data is lost.
- */
-if (Session::exists($data->class))
-{
-	$output .= '<div class="col-sm-12">';
-	$output .= Session::flash($data->class);
-	$output .= '</div>';
-}
-
-if ($data->posted)
-{
-    if ($data->status == 'unbanned')
-    {
-        $output .= Bootstrap::makeAlert(
-            $color = 'success',
-            $heading = $data->page_title . ' unbanned!',
-            $body = 'The ' . $data->page_title . 'has been unbanned and can now log back in to the site.',
-            $dismissible = true
-    	);
-    }
-
-    if ($data->status == 'banned')
-    {
-        $output .= Bootstrap::makeAlert(
-            $color = 'danger',
-            $heading = $data->page_title . ' banned!',
-            $body = 'The ' . $data->page_title . 'has been banned and can no longer log in to the site.',
-            $dismissible = true
-    	);
-    }
-
-    if ($data->status == 'verified')
-    {
-        $output .= Bootstrap::makeAlert(
-            $color = 'success',
-            $heading = $data->page_title . ' verified!',
-            $body = 'The ' . $data->page_title . 'has been verified and can now log in to the site.',
-            $dismissible = true
-    	);
-    }
-
-    if ($data->status == 'change_level')
-    {
-        $output .= Bootstrap::makeAlert(
-            $color = 'success',
-            $heading = $data->page_title . ' updated!',
-            $body = 'The ' . $data->page_title . '\'s level has been updated.',
-            $dismissible = true
-    	);
-    }
-
-}
-
-if ($data->errors)
+if($data->status == 'no_user')
 {
     $output .= Bootstrap::makeAlert(
         $color = 'info',
-        $heading = $data->page_title . ' not found!',
-        $body = 'The ' . $data->page_title . ' was not found, please select one from the list',
+        $heading = 'User not found!',
+        $body = 'The User was not found, please select one from the <a href="/Users/Listing/">list</a>',
         $dismissible = false
 	);
-
-} else {
-
-    $output .= $core_model::details($data->record, $data->errors);
-
+}
+else
+if($data->status == 'show_form')
+{	
+    $page_name = 'Update Profile : ' . $data->user->username;
+    $user = new Users_Core();
+    $output .= '<div class="row"><div class="col-12  mb-3">';
+    $output .= '<h2>Update Profile</h2>';
+    $output .= $user::edit_form($data->user, $data->errors);
+    $output .= '</div>';
+    $output .= '<hr>';
+    $output .= '<div class="col-12 mb-3">';
+    $output .= '<h2>Update Password</h2>';
+    $output .= $user::resetPasswordForm();
+    $output .= '</div></div>';
+}
+else
+if($data->status == 'show_profile')
+{	
+    $page_name .= ' : ' . $data->user->username;
+    $output .=  '<b>ID : </b>' . $data->user->id . '<br>';
+    $output .=  '<b>Full Name : </b>' . $data->user->firstname . ' ' . $data->user->lastname. '<br>';
+    $output .=  '<b>Email : </b>' . $data->user->email . '<br>';
+    $output .= '<b>Username : </b> ' . $data->user->username . '<br>';
+}
+else
+if($data->status == 'unauthorised')
+{
+    $output .= Bootstrap::makeAlert(
+        $color = 'danger',
+        $heading = 'Not Authorised!',
+        $body = 'You must be logged in to view this page',
+        $dismissible = false
+	);
 }
 
 
-// Close the card
-$output .= '</div></div>';
 
 // Construct the template
-$template = new Admin_Template(
+$template = new Main_Template(
     $output,
+    $version = 'default',
     $page_title = $page_name
 );
 
@@ -2900,114 +2698,154 @@ $template = new Admin_Template(
 
 
 
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 
 
-
-/app/views/admin/delete.php
---------------------------------------------------------------------------------------------
 <?php
 
-/**
-* Collect the passed in data and turn it into an object
-* @var array
-*/
-$data = (object)$data;
+/**	User Profile Controller
 
-/*
-	Set the name of the core class based on $data->class and create a new
-	instance of it called $model
-*/
-$core_model = $data->class.'_Core';
-$model = new $core_model();
-
-// Set the page name by simply appending $data->page_title to 'Delete'
-$page_name = 'Delete ' . $data->page_title;
-
-/**
- * Build the output string that will be passed to the template
- * @var string
+ * Controller for any functions called from the root of Users/Profile.
+ *
+ *
+ * @package Core
+ * @author  Steve Ball <steve@follyball.co.uk>
+ * @copyright Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
+ *
  */
-$output = '';
 
-// We display the whole page in one card so set the outer and body for it
-$output .= '<div class="card mb-3 border-dark"><div class="card-body">';
-
-
-/*
-    If there is a flash Alert for errors or messages, show it here.
-    This will primarily be used to still show data if there has been a
-    Reditect meaning all post data is lost.
- */
-if (Session::exists($data->class))
+class Profile extends Controller
 {
-	$output .= '<div class="col-sm-12">';
-	$output .= Session::flash($data->class);
-	$output .= '</div>';
+
+	/**
+	 * Shows either the users profile page or an update form
+	 *
+	 * We do two things here. Firstly we check to see if
+	 * an update form has been posted and if so, process it
+	 * using profile_update() in the User Model, returning any
+	 * errors to $update. These errors are used to put error
+	 * validation on the form fields.
+	 *
+	 * We then use profile() in the User Model to check if a user
+	 * has been passed in and if so search for them and return the
+	 * results.
+	 *
+	 * All onscreen messages are handled with Session::flash in the
+	 * relevant classes.
+	 * @param  int/string/email 	$user 	Username, User ID or User Email
+	 * @return view
+	 * @link 	http://site.com/Users/Profile/{username}/
+	 * @link 	http://site.com/Users/Profile/{user id}/
+	 * @link 	http://site.com/Users/Profile/{user email}/
+	 */
+  	public function index($user=null)
+  	{
+		/**
+		 * Set the model
+		 *
+		 * All functions used here are held in the user model.
+		 *
+		 * @return Class
+		 */
+		$model = $this->model('Users_Model');
+
+		/**
+		 * 	Create default variables 
+		 *
+		 *	During this function, we use $errors to store any errors, $posted to show whether any 
+		 *	form data has been posted and $method to show whether we are in view or edit mode 
+		 *	as well as situations where no user has been found or non logged-in users try to edit 
+		 *	a profile.
+		 */
+		$errors = null;
+		$posted = false;
+		$method = null;
+
+		/**
+		 * 	Check if the user has been passed in
+		 *
+		 *	If a user has been passed in, we have two options. If the user actually exists, we need to show
+		 *	their profile, otherwise we need to show a message that the user does not exists.
+		 *
+		 *	If a user has not been passed in, we also have two options. If the view is logged in, we then need to 
+		 *	show the form to update their details, otherwise we show an unathorised message.
+		 *
+		 * 	@var int/string/email 	$user 	Username, User ID or User Email
+		 */
+		if(!$user)
+		{	
+			/*
+				No user has been passed in so we need to check if is being viewed by a logged in person.
+				
+				If it is, we set $status to  'show_form'  otherwise we set it to  'unauthorised'.
+			*/
+			$status = ($model->isLoggedIn()) ? 'show_form' : 'unauthorised';
+			
+			/*
+				If the viewer is logged in (meaning $status = 'show_form') we are in edit mode so we have to 
+				check to see if either the profile or password update forms have been posted.
+				
+				If either have, we attempt the update and set $method to a relevant string
+			 */
+			if($status == 'show_form') 
+			{
+				
+				$user = $model->getData(Session::get('user'));
+				
+				 // Check if a profile update has been posted and if so, process it
+				if (Input::get('user_submit'))
+				{
+					$posted = true;
+					$method = 'profile';
+					$errors = $model->update($user, $admin=false);
+				}
+								// Check if a password update has been posted and if so, process it
+				if (Input::get('reset_password_submit')) {
+					$posted = true;
+					$method = 'password';
+					$errors = $model->changePassword($user->id);
+				}
+				
+				
+
+			} // If 'show_form'
+
+		}
+		else
+		{
+			/*
+				A user has been passed in so we need to check if they exist.
+				
+				If they do, we set $status to  'show_profile'  otherwise we set it to  'no_user'.
+			*/
+			$status = ($model->getData($user)) ? 'show_profile' : 'no_user';
+			if($status == 'show_profile') 
+			{
+				$user = $model->getData($user);
+			}
+		}
+
+
+		/**
+		 * Pass the data to the view
+		 * @var 	string 	View Path
+		 * @var 	array 	Data being passed to the view
+		 */
+		$this->view(
+			'users/profile',
+			[
+				'user' => $user,
+				'errors' => $errors,
+				'status' => $status,
+				'posted' => $posted,
+				'method' => $method
+			]
+		);
+  	} // index()
 }
 
-/*
-	Error checks
 
-	The only error we should have is the requested record (User) cannot be found. This will
-	have been set against $data->errors so we check if that is set as well.
 
-	If there is anything to return, it will be shown as a bootstrap alert so we set the correct colour, 
-	heading and body for this.
-*/
-if ($data->errors)
-{	
-	// There are errors so set the values for the alert
-	$output .= Bootstrap::makeAler t(
-		$color = 'info',
-		$heading = $data->page_title . ' not found!',
-		$body = 'The ' . $data->page_title . ' was not found, please select one from the list',
-		$dismissible = false
-	);
 
-} else
-{
-	/*
-		There are no errors so we need to check if we are pre-delete or post delete. 
-		
-		This is passed from the controller as 'status'  and if it is set to process, it means that 
-		the delete has happened, otherwise we are still at warning stage.
-		
-		Whichever, we simply return an alert so when checking the status, we just set the
-		parameters for it.
-	*/
-	if ($data->status == 'process')
-	{
-		// We are post deletion so set up the deleted message
-		$color = 'success';
-		$heading = $data->page_title . ' deleted!';
-		$body = 'The ' . $data->page_title . ' was successfully deleted.<a href="/Admin/' . $data->class .'/Listing/">View all ' . $data->page_title .'\'s </a>';
-		$dismissible=true;
-
-	} else 
-	{
-		// We are pre deletion so set up the warning message
-		$color = 'danger';
-		$heading = 'Deleting ' . $data->page_title;
-		$body = 'This cannot be undone. <br> <a href="/Admin/' . $data->class . '/Delete/' . $data->record . '/Confirm">Click here to confirm</a>';
-		$dismissible=true;
-	}
-	
-	// Create the alert from the parameters set
-	$output .= Bootstrap::makeAlert(
-		$color,
-		$heading,
-		$body,
-		$dismissible
-	);
-} // Errors
-
-// Close the card
-$output .= '</div></div>';
-
-// Construct the template
-$template = new Admin_Template(
-    $output,
-    $page_title = $page_name
-);
 
