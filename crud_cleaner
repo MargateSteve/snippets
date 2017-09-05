@@ -65,26 +65,37 @@ Users_Core
 Multiple improvements
 
 
+Added Model, Core and Controller for Usergroups
 
-+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+Added Model, Core and Controller for Products
+
+Added Usergroups overview to admin menu - config_files/menus.
+
+Added Products to admin menu - config_files/menus.
+
+Added two-way slugify to app/functions/global.php
+
+
+TODO User Hash DELETE
+
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 <?php
 
 /**
- * Demo Admin Model
+ *  Users Model
  *
- * This is a fully commented example of of the default admin model for any
- * table in the database.
+ *  Contains the standard functions but also extends Users_Core, which contains any other functions for data 
+ *  manipulation, as well as the CRUD forms and displays. 
  *
- * These models contain all the CRUD functions, forms, table and session
- * information.
+ *  Note that Users have a lot more functionality than mosts sections so there is a lot more to this one than most 
+ *  models will contain.
  *
- * This demo is based on functions around User Groups.
- *
- * @package Core
- * @author  Steve Ball <steve@follyball.co.uk>
- * @copyright Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
- *
+ *  @package Core
+ *  @author  Steve Ball <steve@follyball.co.uk>
+ *  @copyright Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
+ *  TODO: Set private and static variables
  */
 
 // Include the initiation file
@@ -94,24 +105,44 @@ require_once '../app/init.php';
 class Users_Model extends Users_Core
 {
 	// Set any private variables that can only be accessed within this file
-	private // The session name to be used in flash alerts
+	private 	$_qry,
+			$_data,
+			$_record,
+			$_record_data,
+			$_field,
+			$_param,
+			$_list,
+	
+	
+	
+	// The session name to be used in flash alerts
 		$_default_session_name = 'Users',
 
             // Variables that are created in the class
             $_postdata,
-            $_field,
             $_errortext,
             $_errors,
             $_inputs,
             $_validate,
-            $_value,
-            $_record;
+            $_value
+;
 
-	// Set any public functionsn that can be accessed globally
-	public  // The button to add to create and update forms
-            $_default_submit_button = 'user_submit'
-            ;
 
+
+	
+	/**
+	 * Get the total number of records
+	 *
+	 * @return int 	    Count of rows
+	 */
+	public function count()
+	{
+		// Select all records from the database
+		$_qry  =  $this->db()->query('SELECT * FROM '.$this->_crud_table['name']);
+
+		// Return a count of the records returned
+		return $_qry->count();
+	} // count()
 
 	/**
 	 * Create a new record
@@ -429,6 +460,20 @@ class Users_Model extends Users_Core
     	} // changePassword()
 
 	/**
+         *  Return a records data
+         *
+         *	Returns the private $this->_data details
+         *	array in a public function
+         *
+         * @return array 	Record data
+         *
+         **/
+	public function data ()
+	{
+		return $this->_data;
+	} // data ()
+
+	/**
          * Delete a record
          *
          *  Deletes the specified record from $this->_crud_table['name']
@@ -462,6 +507,73 @@ class Users_Model extends Users_Core
 	   return ($this->data()) ? true : false;
 	} // exists ()
 	
+	/**
+	 * Find a record
+	 *
+	 * Finds a record and assigns it's details from the $this->_crud_table['name']
+	 * table to $this->_data. This can then be accessed from other files
+	 * using data().
+	 *
+	 *
+	 * @param  string/email/int 	$group  	Group identifier
+	 * @return Boolean/Array
+	 */
+	public function find($_record=null)
+	{
+		// We only run this if a record has been passed in so check for it
+		if ($_record)
+		{
+			/*
+				A record has been passed in so we now need to check what parameter has
+				been used to determine which field we are going to check it against in the table.
+
+				For Users, the $_record will either be the id or the username so we do not have
+				to manipulate it at all. There will be some occasions where we have to tweak
+				$_record to suit what is stored in the database compared to what we can use in a url. Ideally in these situations, we would use a slug.
+
+				If $_record is a number, we will assume it is the id field as usernames must start with a letter, otherwise it must be the username.
+
+			 */
+			if(is_numeric($_record) && (int) $_record == $_record)
+			{
+				// $_record is numeric so we need to look up the id field
+				$_field = 'id';
+			} else
+			{
+				// $_record is not numeric so we need to look up the username or email field depending on the data posted
+			$_field = (filter_var($_record, FILTER_VALIDATE_EMAIL)) ? 'email' :   'username';
+			}
+
+			// Search the table for the passed in $_record and correct $_field
+			$data = self::db()->get($this->_crud_table['name'], array($_field, '=', $_record));
+
+			// If the query returns any rows, set the data to $this->_data and return true
+			if ($data->count()) {
+				$this->_data = $data->first();
+				return true;
+			}
+		}
+		return false;
+	} // find ()
+
+	/**
+	 *	Quick data lookup
+	 *
+	 * 	SImply takes a valid parameter and runs it through the find () function within
+	 * 	this model and returns the data.
+	 *
+	 * 	This can be used to acces either all data as an array
+	 *  	$var = getData ($param)
+	 *
+	 * 	or a single element
+	 * 	$var = getData ($param)->name
+	 **/
+	public function getData ($param)
+	{
+		$data = $this->find($param);
+		return $this->data();
+	}
+
 	/**
          * Return a list of Records
          *
@@ -814,7 +926,21 @@ class Users_Model extends Users_Core
 
 
 
-+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 
 <?php
@@ -844,9 +970,12 @@ class Users extends Controller
 		$_default_model_name = 'Users_Model',
 
 		// The path to the default view - not CRUD functions as these are predefined views
-		$_default_crud_view = 'admin/Users'
+		$_default_crud_view = 'admin/Users',
+		
+		$_default_submit_button = 'product_submit'
 		;
-
+	
+	
 	/**
 	 * Construct the class
 	 *
@@ -1049,12 +1178,12 @@ class Users extends Controller
 
              */
 
-		if(null !== Input::get($this->_default_model->_default_submit_button))
+		if(null !== Input::get($this->_default_submit_button))
     		{
 			// An update has been made so set $_posted to true
 				$_posted = true;
 
-			switch (Input::get($this->_default_model->_default_submit_button))
+			switch (Input::get($this->_default_submit_button))
 			{
 			    case 'unban':
 				$update_field = 'status';
@@ -1354,8 +1483,24 @@ class Users extends Controller
 
 
 
-+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 
 <?php
@@ -1363,7 +1508,10 @@ class Users extends Controller
 require_once '../app/init.php';
 
 class Users_Core {
-
+	
+	 public static 
+		$_default_submit_button = 'product_submit';
+	 
 	 protected static
 		/*
 			Default form fields for the create and update forms
@@ -1458,10 +1606,6 @@ class Users_Core {
         $_data
     ;
 
-    private static
-
-        $_default_submit_button = 'user_submit'
-    ;
 
     public
 	    // Title to be used in CRUD page headers ('Edit User', 'Delete User' etc)
@@ -1551,34 +1695,8 @@ class Users_Core {
 		return  DB::dbConnect();
 	} // db()
 
-	/**
-	 * Get the total number of records
-	 *
-	 * @return int 	    Count of rows
-	 */
-	public function count()
-	{
-		// Select all records from the database
-		$_qry  =  $this->db()->query('SELECT * FROM '.$this->_crud_table['name']);
-
-		// Return a count of the records returned
-		return $_qry->count();
-	} // count()
-
-	/**
-         *  Return a records data
-         *
-         *	Returns the private $this->_data details
-         *	array in a public function
-         *
-         * @return array 	Record data
-         *
-         **/
-	public function data ()
-	{
-		return $this->_data;
-	} // data ()
-
+	
+	
         /**
          * Create / Update / Register form
          *
@@ -1773,55 +1891,7 @@ class Users_Core {
 
 	} // default_form ()
 
-	/**
-	 * Find a record
-	 *
-	 * Finds a record and assigns it's details from the $this->_crud_table['name']
-	 * table to $this->_data. This can then be accessed from other files
-	 * using data().
-	 *
-	 *
-	 * @param  string/email/int 	$group  	Group identifier
-	 * @return Boolean/Array
-	 */
-	public function find($_record=null)
-	{
-		// We only run this if a record has been passed in so check for it
-		if ($_record)
-		{
-			/*
-				A record has been passed in so we now need to check what parameter has
-				been used to determine which field we are going to check it against in the table.
-
-				For Users, the $_record will either be the id or the username so we do not have
-				to manipulate it at all. There will be some occasions where we have to tweak
-				$_record to suit what is stored in the database compared to what we can use in a url. Ideally in these situations, we would use a slug.
-
-				If $_record is a number, we will assume it is the id field as usernames must start with a letter, otherwise it must be the username.
-
-			 */
-			if(is_numeric($_record) && (int) $_record == $_record)
-			{
-				// $_record is numeric so we need to look up the id field
-				$_field = 'id';
-			} else
-			{
-				// $_record is not numeric so we need to look up the username or email field depending on the data posted
-			$_field = (filter_var($_record, FILTER_VALIDATE_EMAIL)) ? 'email' :   'username';
-			}
-
-			// Search the table for the passed in $_record and correct $_field
-			$data = self::db()->get($this->_crud_table['name'], array($_field, '=', $_record));
-
-			// If the query returns any rows, set the data to $this->_data and return true
-			if ($data->count()) {
-				$this->_data = $data->first();
-				return true;
-			}
-		}
-		return false;
-	} // find ()
-
+	
 	/**
 	 * Check if a user is logged in
 	 * @return boolean Login Status
@@ -1831,24 +1901,7 @@ class Users_Core {
 		return (Session::exists(Globals::get('user/user_session'))) ? true : false ;
 	} // isLoggedIn()
 
-	/**
-	 *	Quick data lookup
-	 *
-	 * 	SImply takes a valid parameter and runs it through the find () function within
-	 * 	this model and returns the data.
-	 *
-	 * 	This can be used to acces either all data as an array
-	 *  	$var = getData ($param)
-	 *
-	 * 	or a single element
-	 * 	$var = getData ($param)->name
-	 **/
-	public function getData ($param)
-	{
-		$data = $this->find($param);
-		return $this->data();
-	}
-
+	
 	/**
 	 * Check a user has the required permission
 	 *
@@ -2500,8 +2553,188 @@ class Users_Core {
 
 
 
-+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
+
+
+
+
+
+
+
+
+
+
+
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+<?php
+
+/**	User Profile Controller
+
+ * Controller for any functions called from the root of Users/Profile.
+ *
+ *
+ * @package Core
+ * @author  Steve Ball <steve@follyball.co.uk>
+ * @copyright Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
+ *
+ */
+
+class Profile extends Controller
+{
+
+	/**
+	 * Shows either the users profile page or an update form
+	 *
+	 * We do two things here. Firstly we check to see if
+	 * an update form has been posted and if so, process it
+	 * using profile_update() in the User Model, returning any
+	 * errors to $update. These errors are used to put error
+	 * validation on the form fields.
+	 *
+	 * We then use profile() in the User Model to check if a user
+	 * has been passed in and if so search for them and return the
+	 * results.
+	 *
+	 * All onscreen messages are handled with Session::flash in the
+	 * relevant classes.
+	 * @param  int/string/email 	$user 	Username, User ID or User Email
+	 * @return view
+	 * @link 	http://site.com/Users/Profile/{username}/
+	 * @link 	http://site.com/Users/Profile/{user id}/
+	 * @link 	http://site.com/Users/Profile/{user email}/
+	 */
+  	public function index($user=null)
+  	{
+		/**
+		 * Set the model
+		 *
+		 * All functions used here are held in the user model.
+		 *
+		 * @return Class
+		 */
+		$model = $this->model('Users_Model');
+
+		/**
+		 * 	Create default variables 
+		 *
+		 *	During this function, we use $errors to store any errors, $posted to show whether any 
+		 *	form data has been posted and $method to show whether we are in view or edit mode 
+		 *	as well as situations where no user has been found or non logged-in users try to edit 
+		 *	a profile.
+		 */
+		$errors = null;
+		$posted = false;
+		$method = null;
+
+		/**
+		 * 	Check if the user has been passed in
+		 *
+		 *	If a user has been passed in, we have two options. If the user actually exists, we need to show
+		 *	their profile, otherwise we need to show a message that the user does not exists.
+		 *
+		 *	If a user has not been passed in, we also have two options. If the view is logged in, we then need to 
+		 *	show the form to update their details, otherwise we show an unathorised message.
+		 *
+		 * 	@var int/string/email 	$user 	Username, User ID or User Email
+		 */
+		if(!$user)
+		{	
+			/*
+				No user has been passed in so we need to check if is being viewed by a logged in person.
+				
+				If it is, we set $status to  'show_form'  otherwise we set it to  'unauthorised'.
+			*/
+			$status = ($model->isLoggedIn()) ? 'show_form' : 'unauthorised';
+			
+			/*
+				If the viewer is logged in (meaning $status = 'show_form') we are in edit mode so we have to 
+				check to see if either the profile or password update forms have been posted.
+				
+				If either have, we attempt the update and set $method to a relevant string
+			 */
+			if($status == 'show_form') 
+			{
+				
+				$user = $model->getData(Session::get('user'));
+				
+				 // Check if a profile update has been posted and if so, process it
+				if (Input::get('user_submit'))
+				{
+					$posted = true;
+					$method = 'profile';
+					$errors = $model->update($user, $admin=false);
+				}
+								// Check if a password update has been posted and if so, process it
+				if (Input::get('reset_password_submit')) {
+					$posted = true;
+					$method = 'password';
+					$errors = $model->changePassword($user->id);
+				}
+				
+				
+
+			} // If 'show_form'
+
+		}
+		else
+		{
+			/*
+				A user has been passed in so we need to check if they exist.
+				
+				If they do, we set $status to  'show_profile'  otherwise we set it to  'no_user'.
+			*/
+			$status = ($model->getData($user)) ? 'show_profile' : 'no_user';
+			if($status == 'show_profile') 
+			{
+				$user = $model->getData($user);
+			}
+		}
+
+
+		/**
+		 * Pass the data to the view
+		 * @var 	string 	View Path
+		 * @var 	array 	Data being passed to the view
+		 */
+		$this->view(
+			'users/profile',
+			[
+				'user' => $user,
+				'errors' => $errors,
+				'status' => $status,
+				'posted' => $posted,
+				'method' => $method
+			]
+		);
+  	} // index()
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 
 <?php
@@ -2698,154 +2931,1914 @@ $template = new Main_Template(
 
 
 
-+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 
 
 <?php
 
-/**	User Profile Controller
-
- * Controller for any functions called from the root of Users/Profile.
+/**
+ * UserGroups Model
  *
+ * Contains the standard functions but also extends UserGroups_Core, which 
+ * contains any other functions for data manipulation, as well as the CRUD 
+ * forms and displays. 
  *
  * @package Core
  * @author  Steve Ball <steve@follyball.co.uk>
  * @copyright Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
- *
  */
 
-class Profile extends Controller
-{
+require_once '../app/init.php';
 
-	/**
-	 * Shows either the users profile page or an update form
+class UserGroups_Model extends Usergroups_Core
+{	
+	private 	$_qry,
+			$_data,
+			$_record,
+			$_record_data,
+			$_field,
+			$_param,
+			$_list;
+    	/**
+	 *  Get the total number of records
 	 *
-	 * We do two things here. Firstly we check to see if
-	 * an update form has been posted and if so, process it
-	 * using profile_update() in the User Model, returning any
-	 * errors to $update. These errors are used to put error
-	 * validation on the form fields.
-	 *
-	 * We then use profile() in the User Model to check if a user
-	 * has been passed in and if so search for them and return the
-	 * results.
-	 *
-	 * All onscreen messages are handled with Session::flash in the
-	 * relevant classes.
-	 * @param  int/string/email 	$user 	Username, User ID or User Email
-	 * @return view
-	 * @link 	http://site.com/Users/Profile/{username}/
-	 * @link 	http://site.com/Users/Profile/{user id}/
-	 * @link 	http://site.com/Users/Profile/{user email}/
+	 *  @return int 	    Count of rows
 	 */
-  	public function index($user=null)
-  	{
-		/**
-		 * Set the model
-		 *
-		 * All functions used here are held in the user model.
-		 *
-		 * @return Class
-		 */
-		$model = $this->model('Users_Model');
+	public function count()
+	{
+		// Select all records from the database
+		$_qry  =  $this->db()->query('SELECT * FROM '.$this->_crud_table['name']);
 
-		/**
-		 * 	Create default variables 
-		 *
-		 *	During this function, we use $errors to store any errors, $posted to show whether any 
-		 *	form data has been posted and $method to show whether we are in view or edit mode 
-		 *	as well as situations where no user has been found or non logged-in users try to edit 
-		 *	a profile.
-		 */
-		$errors = null;
-		$posted = false;
-		$method = null;
-
-		/**
-		 * 	Check if the user has been passed in
-		 *
-		 *	If a user has been passed in, we have two options. If the user actually exists, we need to show
-		 *	their profile, otherwise we need to show a message that the user does not exists.
-		 *
-		 *	If a user has not been passed in, we also have two options. If the view is logged in, we then need to 
-		 *	show the form to update their details, otherwise we show an unathorised message.
-		 *
-		 * 	@var int/string/email 	$user 	Username, User ID or User Email
-		 */
-		if(!$user)
-		{	
-			/*
-				No user has been passed in so we need to check if is being viewed by a logged in person.
-				
-				If it is, we set $status to  'show_form'  otherwise we set it to  'unauthorised'.
-			*/
-			$status = ($model->isLoggedIn()) ? 'show_form' : 'unauthorised';
-			
-			/*
-				If the viewer is logged in (meaning $status = 'show_form') we are in edit mode so we have to 
-				check to see if either the profile or password update forms have been posted.
-				
-				If either have, we attempt the update and set $method to a relevant string
-			 */
-			if($status == 'show_form') 
-			{
-				
-				$user = $model->getData(Session::get('user'));
-				
-				 // Check if a profile update has been posted and if so, process it
-				if (Input::get('user_submit'))
-				{
-					$posted = true;
-					$method = 'profile';
-					$errors = $model->update($user, $admin=false);
-				}
-								// Check if a password update has been posted and if so, process it
-				if (Input::get('reset_password_submit')) {
-					$posted = true;
-					$method = 'password';
-					$errors = $model->changePassword($user->id);
-				}
-				
-				
-
-			} // If 'show_form'
-
-		}
-		else
+		// Return a count of the records returned
+		return $_qry->count();
+	} // count()
+	
+	/**
+         *  Return a records data
+         *
+         *  Returns the private $this->_data details array in a public function
+         *
+         *  @return array 	Record data
+         **/
+	public function data ()
+	{
+		return $this->_data;
+	} // data ()
+	
+	
+	/**
+	 *  Find a record
+	 *
+	 *  Finds a record and assigns it's details from the $this->_crud_table['name']
+	 *  table to $this->_data. This can then be accessed from other files
+	 *  using data().
+	 *
+	 *
+	 *  @param  string/int 	$_record  	Record identifier
+	 *  @return Boolean/Array
+	 */
+	public function find($_record=null)
+	{
+		// We only run this if a record has been passed in so check for it
+		if ($_record)
 		{
 			/*
-				A user has been passed in so we need to check if they exist.
-				
-				If they do, we set $status to  'show_profile'  otherwise we set it to  'no_user'.
-			*/
-			$status = ($model->getData($user)) ? 'show_profile' : 'no_user';
-			if($status == 'show_profile') 
+				A record has been passed in so we now need to check what parameter has been used to determine which field we are going to check it against in the table.
+
+				For Usergroups, the $_record will either be the id or the name. As Usergroups names can contain spaces that will be slugified to use as links, we will need to deslugify them before we look them up.
+
+				If $_record is a number, we will assume it is the id field as names will be text characters.
+
+			 */
+			if(is_numeric($_record) && (int) $_record == $_record)
 			{
-				$user = $model->getData($user);
+				// $_record is numeric so we need to look up the id field
+				$_field = 'id';
+			} else
+			{
+				// $_record is not numeric so we need to look up the name field
+				$_field = 'name';
+				
+				// As the name field can have spaces, we slugify it
+				$_record = slugify($_record, 'reverse');
+			}
+
+			// Search the table for the passed in $_record and correct $_field
+			$_record_data = self::db()->get($this->_crud_table['name'], array($_field, '=', $_record));
+
+			// If the query returns any rows, set the data to $this->_data and return true
+			if ($_record_data->count()) {
+				$this->_data = $_record_data->first();
+				return true;
 			}
 		}
-
-
-		/**
-		 * Pass the data to the view
-		 * @var 	string 	View Path
-		 * @var 	array 	Data being passed to the view
-		 */
-		$this->view(
-			'users/profile',
-			[
-				'user' => $user,
-				'errors' => $errors,
-				'status' => $status,
-				'posted' => $posted,
-				'method' => $method
-			]
+		return false;
+	} // find ()
+	
+	
+	
+	/**
+	 *	Quick data lookup
+	 *
+	 * 	SImply takes a valid parameter and runs it through the find () function within
+	 * 	this model and returns the data.
+	 *
+	 * 	This can be used to acces either all data as an array
+	 *  	$var = getData ($param)
+	 *
+	 * 	or a single element
+	 * 	$var = getData ($param)->name
+	 **/
+	public function getData ($_param)
+	{
+		$_record_data = $this->find($_param);
+		return $this->data();
+	}
+	
+	/**
+         * Return a list of Records
+         *
+         * @return array  List of Records
+         */
+	public function listing ()
+	{
+		// Select all records from the database
+		$_list = self::db ()->query('SELECT
+		*
+		FROM `' . $this->_crud_table['name'] . '`'
 		);
-  	} // index()
+
+		// Return the results as an array
+		return $_list->results();
+	} // listing ()
 }
 
 
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+<?php
+
+/**	Demo Admin Controller
+
+ *  This is a fully commented example of of the default admin controller for any
+ * table in the database
+ *
+ * These controllers contain all the CRUD functions, forms, table and session
+ * information.
+ *
+ * This demo is based on functions around Users but will also include any extra
+ * functionality that is used elsewhere.
+ *
+ * @package Core
+ * @author  Steve Ball <steve@follyball.co.uk>
+ * @copyright Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
+ *
+ *
+ */
+class Usergroups extends Controller
+{
+	// Set any private variables that can only be accessed within this file
+
+	private // The default model used within the functions
+		$_default_model_name = 'Usergroups_Model',
+		$_list;
+
+	public function __construct ()
+	{
+		// Model
+		$this->_default_model = $this->model($this->_default_model_name);
+
+	} // __construct ()
+	
+	/**
+         * Overview
+         *
+         * The front page for the section in the admin area. This can contain absolutely anything but will generally 
+	 * contain overall counts of records and other usuful information.
+         *
+         * @return view
+         */
+	public function index()
+	{
+		$this->view(
+			'/admin/overview',
+			[
+			'page_title' => $this->_default_model->_default_title,
+			'class' => $this->_default_model->_default_class_name,
+			'count' => $this->_default_model->count()
+			]
+		);
+	} // index()
+		
+	/**
+	 * Shows a listing of records in a table
+	 *
+	 * Sends an array of records to the view along with any rules for the
+	 * table (such as which buttons to show, the reference for View, Edit and
+	 * Delete buttons)
+	 *
+	 * @return view
+	 *
+	*/
+	public function listing()
+	{
+
+		// List Table Rules
+		$this->table_rules = $this->_default_model->_crud_table;
+
+		/*
+			The listing() function in the default model will return an array of all the records
+			in the specified database table.
+
+			In many cases, this will be enough but sometimes we want to manipulate the
+			data before displaying it. To accomodate this, we set the array to a $_list variable 
+			so we can add to, remove from or amend any element.  $_list is what then gets passed to the view.
+		 */
+		$_list = $this->_default_model->listing();
+
+		/*
+			We now loop through the $list array containing the listing data and manipulate where necessary.
+
+			Note : we do not need to manipulate anything on User Groups so we just leave it here as reference.
+			The example is from Users where ->group is originally an id but replaced with group->name
+		*/
+		# foreach ($this->_default_model->listing() as $key => $value)
+		# {
+		# 	$list[$key]->group = $groups_model->getData($list[$key]->group)->name;
+		# } // foreach ()
+
+		/*
+		    Pass the data to the view.
+
+		    To start off, we pass the default title which will be added to used within the view
+		    to create the page title such as 'Listing Users'.
+
+		    Next we pass in the name that is used as the XXX_Core and XXX_Model
+		    classes. This also must match the name of this file as this is where the  View,
+		    Edit and Delete links get sent back to.
+		    These need to be named correctly for this to work so for 'Users' we use
+		    'Users_Core' and 'Users_Model'. The name is actually set in  'Users_Model'
+		    as $_default_class_name = 'Users'.
+
+		    After this we pass in the the array of data to be shown in the table followed by any
+		    rules and buttons that have been set in $this->table_rules in the __construct of this
+		    file via getData in the model
+		*/
+		$this->view(
+			'admin/list',
+			[
+                // Pass the page title - this is set as $_default_title in the __Core class
+				'page_title' => $this->_default_model->_default_title,
+
+				// Pass the class name to automatically call the correct model and core classes
+				'class' => $this->_default_model->_default_class_name,
+
+				// The list of data to be shown in the table
+				'list' => $_list,
+
+				// The rules and classes to be passed to the table
+				'table_rules' => $this->_default_model->_crud_table['listing'],
+
+				// The buttons
+				'buttons' => (isset($this->table_rules['buttons'])) ? $this->table_rules['buttons'] : null
+			]
+		);
+	} // listing()
+
+
+
+	/**
+	 * Show a records details
+	 *
+	 * The details view for Users is a lot more complex than any others
+	 * as the view also contains the option to ban, unban and verify a
+	 * user as well as changing their user group.
+	 *
+	 * @param  int/string   $record     Record Identifier
+	 * @return 	view
+	 */
+	public function details($record=null)
+	{   	
+		$_data = null;
+		$_errors = null;
+		/*
+		    If no record has been set, we do nothing other than flash a
+		    message, otherwise we check the group exists.
+		 */
+		if(!$this->_default_model->find($record))
+		{
+			// The record is not set so flash the message
+			$_errors = 'notfound';
+		} 
+		else
+		{
+			$_data = $this->_default_model->data();
+		}
+
+		$this->view(
+			'/admin/view',
+			[
+				// Pass the page title - this is set as $_default_title in the __Core class
+				'page_title' => $this->_default_model->_default_title,
+
+				// Pass the data of the record
+				'record' => $_data,
+
+				// Pass the class name to automatically call the correct model and core classes
+				'class' => $this->_default_model->_default_class_name,
+
+				// Nothing gets posted from this page in User Groups
+				'posted' => null,
+
+				// Nothing gets posted from this page in User Groups
+				'status' => null,
+
+				// Nothing gets posted from this page in User Groups
+				'errors' => $_errors
+			]
+
+		);
+	} // details()
+
+		
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+
+<?php
+
+require_once '../app/init.php';
+
+class Usergroups_Core {
+	private	$_params,
+			$_text;
+			
+	public 	$_default_title = 'User Groups',
+			$_default_class_name = 'Usergroups',
+			$_default_submit_button = 'usergroup_submit',
+			$_crud_table = array(
+				'name' => 'user_groups',
+				'listing' => array(
+					'id' => array(
+						'th' => array(
+						    'alias' => '#'
+						),
+						'td' => array(
+						    'type' => 'text'
+						)
+					),
+
+					'name' => array(
+						'th' => array(
+							'alias' => 'Group Name'
+						),
+						'td' => array(
+							'type' => 'link',
+							'link_field' => 'name'
+						)
+					),
+					
+					'permissions' => array(
+						'th' => array(
+							//'alias' => 'User Group'
+						),
+						'td' => array(
+							'type' => 'text'
+						)
+					),
+				),
+				
+				'buttons' => array (
+					'link_field' => 'name',
+					'items' => array('details', 'edit', 'delete')
+				)
+			);
+	/**
+	 * Connect to the database
+	 *
+	 * Returns an instance of the database connection to be used
+	 * within the class. This is set as a function as it also needs
+	 * to be accessed by the model.
+	 *
+	 * @return  Database connection
+	 */
+	protected function db()
+	{
+		return  DB::dbConnect();
+	} // db()
+	
+		/**
+	 * Show the overview
+	 *
+	 * Shows an overview of the section and is infinitely adaptable
+	 *
+	 * @param  array  $params All parameters required to build the page
+	 * @return string         Entire content
+	 */
+	public static function overview ($_params=array())
+	{
+		$_text =  '';
+
+		$_text =  '<b>Groups : </b>' . $_params['count'] . '<br>';
+
+		return $_text;
+	}
+	
+		/**
+	 * Show the record details in the admin area
+	 *
+	 * Compiles everything to be shown on the records details page
+	 * in the admin area.
+	 *
+	 * Again, Users is more complicated as most due to the options
+	 * to ban, unban and verify a user as well as changing their
+	 * user group.
+	 *
+	 * @param  array  $params All parameters required to build the page
+	 * @return string         Entire content
+	 */
+	public static function showDetailsAdmin ($params=array())
+	{
+		// Start the output by creating an empty $text variable
+		$text = '';
+
+		/*
+			Now that the forms are out of the way we can get on with displaying
+			the users details.
+
+			There are no restrictions on what can be done here.
+		*/
+		$text .=  '<b>ID : </b>' . $params['record']->id . '<br>';
+		$text .=  '<b>Name : </b>' . $params['record']->name . '<br>';
+		$text .=  '<b>Permissions : </b>' . $params['record']->permissions . '<br>';
+
+		// Return the output
+		return $text;
+
+	} // showDetailsAdmin ()
+	
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+
+<?php
+
+/**
+ * Products Model
+ *
+ * Contains the standard functions but also extends Products_Core, which 
+ * contains any other functions for data manipulation, as well as the CRUD 
+ * forms and displays. 
+ *
+ * @package Core
+ * @author  Steve Ball <steve@follyball.co.uk>
+ * @copyright Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
+ */
+
+// Include the initiation file
+require_once '../app/init.php';
+
+
+class Products_Model extends Products_Core
+{	
+	private 	$_qry,
+			$_data,
+			$_record,
+			$_record_data,
+			$_field,
+			$_param,
+			$_list;
+	/**
+	 *  Get the total number of records
+	 *
+	 *  @return int 	    Count of rows
+	 */
+	public function count()
+	{
+		// Select all records from the database
+		$_qry  =  $this->db()->query('SELECT * FROM '.$this->_crud_table['name']);
+
+		// Return a count of the records returned
+		return $_qry->count();
+	} // count()
+	
+	/**
+         *  Return a records data
+         *
+         *  Returns the private $this->_data details array in a public function
+         *
+         *  @return array 	Record data
+         **/
+	public function data ()
+	{
+		return $this->_data;
+	} // data ()
+	
+	
+	/**
+	 *  Find a record
+	 *
+	 *  Finds a record and assigns it's details from the $this->_crud_table['name']
+	 *  table to $this->_data. This can then be accessed from other files
+	 *  using data().
+	 *
+	 *  @param  string/int 	$_record  	Record identifier
+	 *  @return Boolean/Array
+	 */
+	public function find($_record=null)
+	{
+		// We only run this if a record has been passed in so check for it
+		if ($_record)
+		{
+			/*
+				A record has been passed in so we now need to check what parameter has been used to determine which field we are going to check it against in the table.
+
+				For Usergroups, the $_record will either be the id or the name. As Usergroups names can contain spaces that will be slugified to use as links, we will need to deslugify them before we look them up.
+
+				If $_record is a number, we will assume it is the id field as names will be text characters.
+
+			 */
+			if(is_numeric($_record) && (int) $_record == $_record)
+			{
+				// $_record is numeric so we need to look up the id field
+				$_field = 'id';
+			} else
+			{
+				// $_record is not numeric so we need to look up the product name field
+				$_field = 'product_name';
+				
+				// As the product name field can have spaces, we slugify it
+				$_record = slugify($_record, 'reverse');
+			}
+
+			// Search the table for the passed in $_record and correct $_field
+			$_record_data = self::db()->get($this->_crud_table['name'], array($_field, '=', $_record));
+
+			// If the query returns any rows, set the data to $this->_data and return true
+			if ($_record_data->count()) {
+				$this->_data = $_record_data->first();
+				return true;
+			}
+		} // if $_record
+		return false;
+	} // find ()
+	
+	
+	
+	/**
+	 *	Quick data lookup
+	 *
+	 * 	SImply takes a valid parameter and runs it through the find () function within
+	 * 	this model and returns the data.
+	 *
+	 * 	This can be used to acces either all data as an array
+	 *  	$var = getData ($param)
+	 *
+	 * 	or a single element
+	 * 	$var = getData ($param)->name
+	 **/
+	public function getData ($_param)
+	{
+		$_record_data = $this->find($_param);
+		return $this->data();
+	}
+	
+	/**
+         * Return a list of Records
+         *
+         * @return array  List of Records
+         */
+	public function listing ()
+	{
+		// Select all records from the database
+		$_list = self::db ()->query('SELECT
+		*
+		FROM `' . $this->_crud_table['name'] . '`'
+		);
+
+		// Return the results as an array
+		return $_list->results();
+	} // listing ()
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+<?php
+
+/**	Admin Products Controller
+
+ * Controller for any functions for Products
+ *
+ * 
+ * @package Core
+ * @author  Steve Ball <steve@follyball.co.uk>
+ * @copyright Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
+ *
+ */
+class Products extends Controller
+{
+	// Set any private variables that can only be accessed within this file
+
+	private // The default model used within the functions
+		$_default_model_name = 'Products_Model',
+		
+		$_default_submit_button = 'product_submit',
+		
+		
+		$_list;
+
+	public function __construct ()
+	{
+		// Model
+		$this->_default_model = $this->model($this->_default_model_name);
+
+	} // __construct ()
+	
+	/**
+         * Overview
+         *
+         * The front page for the section in the admin area. This can contain absolutely anything but will generally 
+	 * contain overall counts of records and other usuful information.
+         *
+         * @return view
+         */
+	public function index()
+	{
+		$this->view(
+			'/admin/overview',
+			[
+			'page_title' => $this->_default_model->_default_title,
+			'class' => $this->_default_model->_default_class_name,
+			'count' => $this->_default_model->count()
+			]
+		);
+	} // index()
+		
+	/**
+	 * Shows a listing of records in a table
+	 *
+	 * Sends an array of records to the view along with any rules for the
+	 * table (such as which buttons to show, the reference for View, Edit and
+	 * Delete buttons)
+	 *
+	 * @return view
+	 *
+	*/
+	public function listing()
+	{
+
+		// List Table Rules
+		$this->table_rules = $this->_default_model->_crud_table;
+
+		/*
+			The listing() function in the default model will return an array of all the records
+			in the specified database table.
+
+			In many cases, this will be enough but sometimes we want to manipulate the
+			data before displaying it. To accomodate this, we set the array to a $_list variable 
+			so we can add to, remove from or amend any element.  $_list is what then gets passed to the view.
+		 */
+		$_list = $this->_default_model->listing();
+
+		/*
+		    Pass the data to the view.
+
+		    To start off, we pass the default title which will be added to used within the view
+		    to create the page title such as 'Listing Users'.
+
+		    Next we pass in the name that is used as the XXX_Core and XXX_Model
+		    classes. This also must match the name of this file as this is where the  View,
+		    Edit and Delete links get sent back to.
+		    These need to be named correctly for this to work so for 'Users' we use
+		    'Users_Core' and 'Users_Model'. The name is actually set in  'Users_Model'
+		    as $_default_class_name = 'Users'.
+
+		    After this we pass in the the array of data to be shown in the table followed by any
+		    rules and buttons that have been set in $this->table_rules in the __construct of this
+		    file via getData in the model
+		*/
+		$this->view(
+			'admin/list',
+			[
+                // Pass the page title - this is set as $_default_title in the __Core class
+				'page_title' => $this->_default_model->_default_title,
+
+				// Pass the class name to automatically call the correct model and core classes
+				'class' => $this->_default_model->_default_class_name,
+
+				// The list of data to be shown in the table
+				'list' => $_list,
+
+				// The rules and classes to be passed to the table
+				'table_rules' => $this->_default_model->_crud_table['listing'],
+
+				// The buttons
+				'buttons' => (isset($this->table_rules['buttons'])) ? $this->table_rules['buttons'] : null
+			]
+		);
+	} // listing()
+
+
+
+	/**
+	 * Show a records details
+	 *
+	 * The details view for Users is a lot more complex than any others
+	 * as the view also contains the option to ban, unban and verify a
+	 * user as well as changing their user group.
+	 *
+	 * @param  int/string   $record     Record Identifier
+	 * @return 	view
+	 */
+	public function details($record=null)
+	{   	
+		$_data = null;
+		$_errors = null;
+		/*
+		    If no record has been set, we do nothing other than flash a
+		    message, otherwise we check the group exists.
+		 */
+		if(!$this->_default_model->find($record))
+		{
+			// The record is not set so flash the message
+			$_errors = 'notfound';
+		} 
+		else
+		{
+			$_data = $this->_default_model->data();
+		}
+
+		$this->view(
+			'/admin/view',
+			[
+				// Pass the page title - this is set as $_default_title in the __Core class
+				'page_title' => $this->_default_model->_default_title,
+
+				// Pass the data of the record
+				'record' => $_data,
+
+				// Pass the class name to automatically call the correct model and core classes
+				'class' => $this->_default_model->_default_class_name,
+
+				// Nothing gets posted from this page in User Groups
+				'posted' => null,
+
+				// Nothing gets posted from this page in User Groups
+				'status' => null,
+
+				// Nothing gets posted from this page in User Groups
+				'errors' => $_errors
+			]
+
+		);
+	} // details()
+	
+	
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+<?php
+
+require_once '../app/init.php';
+
+class Products_Core {
+	private	$_params,
+			$_text;
+			
+	public 	$_default_title = 'Products',
+			$_default_class_name = 'Products',
+			$_default_submit_button = 'product_submit',
+			$_crud_table = array(
+				'name' => 'products',
+				'listing' => array(
+					'id' => array(
+						'th' => array(
+						    'alias' => '#'
+						),
+						'td' => array(
+						    'type' => 'text'
+						)
+					),
+
+					'icon' => array(
+						'th' => array(
+							'alias' => ''
+						),
+						'td' => array(
+							'type' => 'icon'
+						)
+					),
+					
+					'product_name' => array(
+						'th' => array(
+							'alias' => 'Product Name'
+						),
+						'td' => array(
+							'type' => 'link',
+							'link_field' => 'product_name'
+						)
+					),
+					
+					'short_name' => array(
+						'th' => array(
+							//'alias' => 'User Group'
+						),
+						'td' => array(
+							'type' => 'text'
+						)
+					),
+				),
+				
+				'buttons' => array (
+					'link_field' => 'product_name',
+					'items' => array('details', 'edit', 'delete')
+				)
+			);
+	/**
+	 * Connect to the database
+	 *
+	 * Returns an instance of the database connection to be used
+	 * within the class. This is set as a function as it also needs
+	 * to be accessed by the model.
+	 *
+	 * @return  Database connection
+	 */
+	protected function db()
+	{
+		return  DB::dbConnect();
+	} // db()
+	
+		/**
+	 * Show the overview
+	 *
+	 * Shows an overview of the section and is infinitely adaptable
+	 *
+	 * @param  array  $params All parameters required to build the page
+	 * @return string         Entire content
+	 */
+	public static function overview ($_params=array())
+	{
+		$_text =  '';
+
+		$_text =  '<b>Products : </b>' . $_params['count'] . '<br>';
+
+		return $_text;
+	}
+	
+		/**
+	 * Show the record details in the admin area
+	 *
+	 * Compiles everything to be shown on the records details page
+	 * in the admin area.
+	 *
+	 * Again, Users is more complicated as most due to the options
+	 * to ban, unban and verify a user as well as changing their
+	 * user group.
+	 *
+	 * @param  array  $params All parameters required to build the page
+	 * @return string         Entire content
+	 */
+	public static function showDetailsAdmin ($params=array())
+	{
+		// Start the output by creating an empty $text variable
+		$text = '';
+
+		/*
+			Now that the forms are out of the way we can get on with displaying
+			the users details.
+
+			There are no restrictions on what can be done here.
+		*/
+		$text .=  '<b>ID : </b>' . $params['record']->id . '<br>';
+		$text .=  '<b>Name : </b>' . $params['record']->product_name . '<br>';
+		$text .=  '<b>Short Name : </b>' . $params['record']->short_name . '<br>';
+		$text .=  '<b>Live Landing Page : </b>' . $params['record']->live_landing_page . '<br>';
+		$text .=  '<b>Icon : </b><i class="fa fa-' . $params['record']->icon . ' text-primary  mr-1" aria-hidden="true"></i>' . $params['record']->icon . '<br>';
+
+		// Return the output
+		return $text;
+
+	} // showDetailsAdmin ()
+	
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+<?php
+
+/**
+ * 	Menus
+ *
+ *	Contains all of the navigation menu's held within the framwework
+ *
+ * 	To use, call the required menu using the Globals::get() function
+ * 	and loop through it to polulated the menu
+ *
+ * @package Core
+ * @author  Steve Ball <steve@follyball.co.uk>
+ * @copyright Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
+ * @return stylesheet
+ */
+
+$GLOBALS['menus'] = array(
+	// Admin Section Left Navigation Menu
+  	'admin_left_nav' => array (
+	    'Dashboard' => array (
+	  	    'type' => 'link',
+	  	    'link' => '/Admin',
+	  	    'icon' => 'dashboard'
+	    ),
+	  	'Users' => array (
+			'type' => 'dropdown',
+			'ref' => 'user',
+			'icon' => 'user',
+			'links' => array (
+				'Overview' => array (
+					  'type' => 'link',
+					  'link' => '/Admin/Users',
+				),
+				'List' => array (
+					  'type' => 'link',
+					  'link' => '/Admin/Users/Listing',
+				),
+				'Create' => array (
+					  'type' => 'link',
+					  'link' => '/Admin/Users/Create',
+				),
+				'User Hash' => array (
+					  'type' => 'link',
+					  'link' => '/Admin/Users/UserHash',
+				),
+		  	)
+	  	),
+		'User Groups' => array (
+			'type' => 'dropdown',
+			'ref' => 'user_groups',
+			'icon' => 'users',
+			'links' => array (
+				'Overview' => array (
+					  'type' => 'link',
+					  'link' => '/Admin/Usergroups',
+				),
+				'List' => array (
+				      'type' => 'link',
+				      'link' => '/Admin/Usergroups/Listing',
+				),
+				'Create' => array (
+					  'type' => 'link',
+					  'link' => '/Admin/Usergroups/Create',
+				),
+			)
+		),
+		'Products' => array (
+			'type' => 'dropdown',
+			'ref' => 'products',
+			'icon' => 'product-hunt',
+			'links' => array (
+				'Overview' => array (
+					  'type' => 'link',
+					  'link' => '/Admin/Products',
+				),
+				'List' => array (
+				      'type' => 'link',
+				      'link' => '/Admin/Products/Listing',
+				),
+				'Create' => array (
+					  'type' => 'link',
+					  'link' => '/Admin/Products/Create',
+				),
+			)
+		),
+
+        'News' => array (
+           'type' => 'dropdown',
+           'ref' => 'news',
+           'icon' => 'newspaper-o',
+           'links' => array (
+               'Overview' => array (
+                     'type' => 'link',
+                     'link' => '/Admin/News',
+               ),
+               'List' => array (
+                     'type' => 'link',
+                     'link' => '/Admin/News/Listing',
+               ),
+               'Create' => array (
+                     'type' => 'link',
+                     'link' => '/Admin/News/Create',
+               ),
+           )
+       ),
+       'Image Gallery' => array (
+          'type' => 'dropdown',
+          'ref' => 'gallery',
+          'icon' => 'image',
+          'links' => array (
+              'Overview' => array (
+                    'type' => 'link',
+                    'link' => '/Admin/Gallery',
+              ),
+              'List' => array (
+                    'type' => 'link',
+                    'link' => '/Admin/Gallery/Listing',
+              ),
+              'Create' => array (
+                    'type' => 'link',
+                    'link' => '/Admin/Gallery/Create',
+              ),
+              'Categories' => array (
+                  'type' => 'dropdown',
+                  'ref' => 'dropdown-sub',
+                  'links' => array (
+                      'Overview' => array (
+                            'type' => 'link',
+                            'link' => '/Admin/Gallery/Categories',
+                      ),
+                      'List' => array (
+                            'type' => 'link',
+                            'link' => '/Admin/Gallery/Categories/Listing',
+                      ),
+                      'Create' => array (
+                            'type' => 'link',
+                            'link' => '/Admin/Gallery/Categories/Create',
+                      ),
+
+                  )
+              ),
+          )
+      ),
+		'Drop' => array (
+			'type' => 'dropdown',
+			'ref' => 'dropdown-test',
+			'icon' => 'cogs',
+			'links' => array (
+				'Sub Link 1' => array (
+					'type' => 'link',
+					'link' => '/Admin2',
+				),
+				'Sub Link 2' => array (
+					'type' => 'link',
+					'link' => '/Admin2',
+				),
+
+				'Sub Sub Link' => array (
+					'type' => 'dropdown',
+					'ref' => 'dropdown-sub',
+					'links' => array (
+						'Sub Sub Link 1' => array (
+							'type' => 'link',
+							'link' => '/SubAdmin2',
+						),
+					  	'Sub Sub Link 2' => array (
+						  	'type' => 'link',
+						  	'link' => '/SubAdmin2',
+					  	),
+
+					)
+				),
+		  	)
+	  	),
+  	), // admin_left_nav
+
+	// Admin Section Top Navigation Menu
+	'admin_top_nav' => array (
+  	    'Home' => array (
+			'type' => 'text',
+			'link' => '/Admin',
+	  	),
+	    'Site' => array (
+			'type' => 'icon',
+			'link' => '/',
+			'icon' => 'globe',
+			'blank' => true
+	  	),
+	    'News' => array (
+			'type' => 'text',
+			'link' => 'index.php?class=news'
+	  	),
+	    'Blog' => array (
+			'type' => 'text',
+			'link' => 'index.php?class=blog'
+	  	),
+	    'Stuff' => array (
+		    'type' => 'dropdown',
+		    'icon' => 'cogs',
+		    'items' => array (
+			    'Gallery' => array (
+				    'link' => 'index.php?class=gallery'
+			    ),
+			    'News' => array (
+				    'link' => 'index.php?class=news'
+			    ),
+			    'Blog' => array (
+				    'link' => 'index.php?class=blog'
+			    ),
+		    )
+	    ),
+		'Mega' => array (
+		    'type' => 'mega',
+			'icon' => 'cogs',
+		    'items' => array (
+				array(
+                    'size' => 'md-3',
+                    'content' => array(
+                        'Action' => '/act1',
+                        'Another action' => '/act2',
+                        'Last action' => '/act3'
+                    )
+                ),
+                array(
+                    'size' => 'md-3',
+                    'content' => array(
+                        'Action' => '/act1',
+                        'Another action' => '/act2',
+                        'Last action2' => '/act3'
+                    )
+                ),
+                array(
+                    'size' => 'md-3',
+                    'content' => array(
+                        'Action' => '/act1',
+                        'Another action' => '/act2',
+                        'Last action3' => '/act3'
+                    )
+                ),
+		    )
+	    ),
+	    'Template' => array (
+		    'type' => 'text',
+		    'link' => 'index.php?class=test'
+	    ),
+    ),  // admin_top_nav
+
+	// Main Site Top Navigation Menu
+	'main_top_nav' => array (
+		'Home' => array (
+			'link', '/'
+		),
+		'Users' => array (
+			'dropdown', array (
+				'Overview' => array (
+					'link', '/Users/'
+				),
+				'Member List' => array (
+					'link', '/Users/Listing/'
+				),
+			)
+		),
+		'Competitions' => array (
+			'dropdown', array (
+				'All Clubs' => array (
+					'link', '/Clubs/'
+				),
+				'Search Example' => array (
+					'link', '/Clubs/Search/*ham*'
+				),
+				'Club By ID' => array (
+					'link', '/Clubs/one/240'
+				),
+				'Club By Name' => array (
+					'link', '/Clubs/one/Manchester_United'
+				),
+			)
+		),
+		'Controllers' => array (
+			'dropdown', array (
+				'Site Root (Home/Index)' => array (
+					'link', '/'
+				),
+				'Site Root method (Home/Method)' => array (
+					'link', '/method'
+				),
+				'Site Root no method (Home/Index)' => array (
+					'link', '/nomethod'
+				),
+				'Root Controller (Control)' => array (
+					'link', '/control'
+				),
+				'Root Controller Method (Control/method)' => array (
+					'link', '/control/method'
+				),
+				'Root Controller No Method(Control/nomethod)' => array (
+					'link', '/control/nomethod'
+				),
+				'Folder Root (folder/Index)' => array (
+					'link', '/folder'
+				),
+				'Folder Root method (Folder/Method)' => array (
+					'link', '/folder/method'
+				),
+				'Folder Root no method (Folder/Index)' => array (
+					'link', '/folder/nomethod'
+				),
+				'Folder Controller (Folder/FolderController)' => array (
+					'link', '/folder/FolderController'
+				),
+				'Folder Controller Method (Folder/FolderController/Method)' => array (
+					'link', '/folder/FolderController/Method'
+				),
+				'Folder SubFolder Root (Folder/SubFolder/Index)' => array (
+					'link', '/folder/subfolder'
+				),
+				'Folder SubFolder Root controller (Folder/SubFolder/subfoldercontroller)' => array (
+					'link', '/folder/subfolder/subfoldercontroller'
+				),
+				'Folder SubFolder Root controller method (Folder/SubFolder/subfoldercontroller/Method)' => array (
+					'link', '/folder/subfolder/subfoldercontroller/Method'
+				),
+				'Folder SubFolder Root method (Folder/SubFolder/Method)' => array (
+					'link', '/folder/subfolder/method'
+				),
+				'Folder SubFolder Root no method (Folder/SubFolder/Index)' => array (
+					'link', '/folder/subfolder/nomethod'
+				),
+			)
+		),
+		'Templates' => array (
+			'link', '/Templates'
+		),
+
+	), //main_top_nav
+
+);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+<?php
+
+/**
+ * 	Menus
+ *
+ *	Contains all of the navigation menu's held within the framwework
+ *
+ * 	To use, call the required menu using the Globals::get() function
+ * 	and loop through it to polulated the menu
+ *
+ * @package Core
+ * @author  Steve Ball <steve@follyball.co.uk>
+ * @copyright Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
+ * @return stylesheet
+ */
+
+$GLOBALS['menus'] = array(
+	// Admin Section Left Navigation Menu
+  	'admin_left_nav' => array (
+	    'Dashboard' => array (
+	  	    'type' => 'link',
+	  	    'link' => '/Admin',
+	  	    'icon' => 'dashboard'
+	    ),
+	  	'Users' => array (
+			'type' => 'dropdown',
+			'ref' => 'user',
+			'icon' => 'user',
+			'links' => array (
+				'Overview' => array (
+					  'type' => 'link',
+					  'link' => '/Admin/Users',
+				),
+				'List' => array (
+					  'type' => 'link',
+					  'link' => '/Admin/Users/Listing',
+				),
+				'Create' => array (
+					  'type' => 'link',
+					  'link' => '/Admin/Users/Create',
+				),
+				'User Hash' => array (
+					  'type' => 'link',
+					  'link' => '/Admin/Users/UserHash',
+				),
+		  	)
+	  	),
+		'User Groups' => array (
+			'type' => 'dropdown',
+			'ref' => 'user_groups',
+			'icon' => 'users',
+			'links' => array (
+				'Overview' => array (
+					  'type' => 'link',
+					  'link' => '/Admin/Usergroups',
+				),
+				'List' => array (
+				      'type' => 'link',
+				      'link' => '/Admin/Usergroups/Listing',
+				),
+				'Create' => array (
+					  'type' => 'link',
+					  'link' => '/Admin/Usergroups/Create',
+				),
+			)
+		),
+		'Products' => array (
+			'type' => 'dropdown',
+			'ref' => 'products',
+			'icon' => 'product-hunt',
+			'links' => array (
+				'Overview' => array (
+					  'type' => 'link',
+					  'link' => '/Admin/Products',
+				),
+				'List' => array (
+				      'type' => 'link',
+				      'link' => '/Admin/Products/Listing',
+				),
+				'Create' => array (
+					  'type' => 'link',
+					  'link' => '/Admin/Products/Create',
+				),
+			)
+		),
+
+        'News' => array (
+           'type' => 'dropdown',
+           'ref' => 'news',
+           'icon' => 'newspaper-o',
+           'links' => array (
+               'Overview' => array (
+                     'type' => 'link',
+                     'link' => '/Admin/News',
+               ),
+               'List' => array (
+                     'type' => 'link',
+                     'link' => '/Admin/News/Listing',
+               ),
+               'Create' => array (
+                     'type' => 'link',
+                     'link' => '/Admin/News/Create',
+               ),
+           )
+       ),
+       'Image Gallery' => array (
+          'type' => 'dropdown',
+          'ref' => 'gallery',
+          'icon' => 'image',
+          'links' => array (
+              'Overview' => array (
+                    'type' => 'link',
+                    'link' => '/Admin/Gallery',
+              ),
+              'List' => array (
+                    'type' => 'link',
+                    'link' => '/Admin/Gallery/Listing',
+              ),
+              'Create' => array (
+                    'type' => 'link',
+                    'link' => '/Admin/Gallery/Create',
+              ),
+              'Categories' => array (
+                  'type' => 'dropdown',
+                  'ref' => 'dropdown-sub',
+                  'links' => array (
+                      'Overview' => array (
+                            'type' => 'link',
+                            'link' => '/Admin/Gallery/Categories',
+                      ),
+                      'List' => array (
+                            'type' => 'link',
+                            'link' => '/Admin/Gallery/Categories/Listing',
+                      ),
+                      'Create' => array (
+                            'type' => 'link',
+                            'link' => '/Admin/Gallery/Categories/Create',
+                      ),
+
+                  )
+              ),
+          )
+      ),
+		'Drop' => array (
+			'type' => 'dropdown',
+			'ref' => 'dropdown-test',
+			'icon' => 'cogs',
+			'links' => array (
+				'Sub Link 1' => array (
+					'type' => 'link',
+					'link' => '/Admin2',
+				),
+				'Sub Link 2' => array (
+					'type' => 'link',
+					'link' => '/Admin2',
+				),
+
+				'Sub Sub Link' => array (
+					'type' => 'dropdown',
+					'ref' => 'dropdown-sub',
+					'links' => array (
+						'Sub Sub Link 1' => array (
+							'type' => 'link',
+							'link' => '/SubAdmin2',
+						),
+					  	'Sub Sub Link 2' => array (
+						  	'type' => 'link',
+						  	'link' => '/SubAdmin2',
+					  	),
+
+					)
+				),
+		  	)
+	  	),
+  	), // admin_left_nav
+
+	// Admin Section Top Navigation Menu
+	'admin_top_nav' => array (
+  	    'Home' => array (
+			'type' => 'text',
+			'link' => '/Admin',
+	  	),
+	    'Site' => array (
+			'type' => 'icon',
+			'link' => '/',
+			'icon' => 'globe',
+			'blank' => true
+	  	),
+	    'News' => array (
+			'type' => 'text',
+			'link' => 'index.php?class=news'
+	  	),
+	    'Blog' => array (
+			'type' => 'text',
+			'link' => 'index.php?class=blog'
+	  	),
+	    'Stuff' => array (
+		    'type' => 'dropdown',
+		    'icon' => 'cogs',
+		    'items' => array (
+			    'Gallery' => array (
+				    'link' => 'index.php?class=gallery'
+			    ),
+			    'News' => array (
+				    'link' => 'index.php?class=news'
+			    ),
+			    'Blog' => array (
+				    'link' => 'index.php?class=blog'
+			    ),
+		    )
+	    ),
+		'Mega' => array (
+		    'type' => 'mega',
+			'icon' => 'cogs',
+		    'items' => array (
+				array(
+                    'size' => 'md-3',
+                    'content' => array(
+                        'Action' => '/act1',
+                        'Another action' => '/act2',
+                        'Last action' => '/act3'
+                    )
+                ),
+                array(
+                    'size' => 'md-3',
+                    'content' => array(
+                        'Action' => '/act1',
+                        'Another action' => '/act2',
+                        'Last action2' => '/act3'
+                    )
+                ),
+                array(
+                    'size' => 'md-3',
+                    'content' => array(
+                        'Action' => '/act1',
+                        'Another action' => '/act2',
+                        'Last action3' => '/act3'
+                    )
+                ),
+		    )
+	    ),
+	    'Template' => array (
+		    'type' => 'text',
+		    'link' => 'index.php?class=test'
+	    ),
+    ),  // admin_top_nav
+
+	// Main Site Top Navigation Menu
+	'main_top_nav' => array (
+		'Home' => array (
+			'link', '/'
+		),
+		'Users' => array (
+			'dropdown', array (
+				'Overview' => array (
+					'link', '/Users/'
+				),
+				'Member List' => array (
+					'link', '/Users/Listing/'
+				),
+			)
+		),
+		'Competitions' => array (
+			'dropdown', array (
+				'All Clubs' => array (
+					'link', '/Clubs/'
+				),
+				'Search Example' => array (
+					'link', '/Clubs/Search/*ham*'
+				),
+				'Club By ID' => array (
+					'link', '/Clubs/one/240'
+				),
+				'Club By Name' => array (
+					'link', '/Clubs/one/Manchester_United'
+				),
+			)
+		),
+		'Controllers' => array (
+			'dropdown', array (
+				'Site Root (Home/Index)' => array (
+					'link', '/'
+				),
+				'Site Root method (Home/Method)' => array (
+					'link', '/method'
+				),
+				'Site Root no method (Home/Index)' => array (
+					'link', '/nomethod'
+				),
+				'Root Controller (Control)' => array (
+					'link', '/control'
+				),
+				'Root Controller Method (Control/method)' => array (
+					'link', '/control/method'
+				),
+				'Root Controller No Method(Control/nomethod)' => array (
+					'link', '/control/nomethod'
+				),
+				'Folder Root (folder/Index)' => array (
+					'link', '/folder'
+				),
+				'Folder Root method (Folder/Method)' => array (
+					'link', '/folder/method'
+				),
+				'Folder Root no method (Folder/Index)' => array (
+					'link', '/folder/nomethod'
+				),
+				'Folder Controller (Folder/FolderController)' => array (
+					'link', '/folder/FolderController'
+				),
+				'Folder Controller Method (Folder/FolderController/Method)' => array (
+					'link', '/folder/FolderController/Method'
+				),
+				'Folder SubFolder Root (Folder/SubFolder/Index)' => array (
+					'link', '/folder/subfolder'
+				),
+				'Folder SubFolder Root controller (Folder/SubFolder/subfoldercontroller)' => array (
+					'link', '/folder/subfolder/subfoldercontroller'
+				),
+				'Folder SubFolder Root controller method (Folder/SubFolder/subfoldercontroller/Method)' => array (
+					'link', '/folder/subfolder/subfoldercontroller/Method'
+				),
+				'Folder SubFolder Root method (Folder/SubFolder/Method)' => array (
+					'link', '/folder/subfolder/method'
+				),
+				'Folder SubFolder Root no method (Folder/SubFolder/Index)' => array (
+					'link', '/folder/subfolder/nomethod'
+				),
+			)
+		),
+		'Templates' => array (
+			'link', '/Templates'
+		),
+
+	), //main_top_nav
+
+);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+<?php
+
+/*------------------------------------------------------------------------------
+** File:        /src/functions/global.php
+** Description: Global functions file
+** Author:      Steve Ball
+**------------------------------------------------------------------------------ */
+
+
+// =============================================================
+//  Autoloads class files on request
+
+include_once 'autoload_class.php';
+
+// =============================================================
+//  Provides function to sanitize html
+include_once 'escape_html.php';
+
+
+
+// =============================================================
+//  Function to show a formatted output  of the generated SQL
+//  and bindings from a query that has been passed in.
+//  Useful for debugging purposes
+function showData ($qry) {
+    echo '<h4>Generated SQL</h4>';
+    echo '<pre>';
+
+    echo $qry->sql();
+    echo '</pre>';
+    //echo '<pre>';
+
+   // echo print_r($qry);
+   // echo '</pre>';
+    if($qry->bindValue ()) {
+        echo '<h4>Bindings</h4>';
+        echo '<pre>';
+        print_r($qry->bindValue ());
+        echo '</pre>';
+    }
+
+}
+
+function nicePrint_r ($array, $title = null) {
+    echo '<pre>';
+    echo (isset($title)) ? '<h1>'.$title.'</h1>': '';
+    print_r($array);
+    echo '</pre>';
+
+}
+
+
+
+function getIncludeFiles ($include, $type) {
+    if(isset($include[$type])) {
+        foreach ($include[$type] as $value) {
+            echo Globals::get($value);
+        }
+    }
+}
+
+
+function slugify ($var, $direction = 'forward') 
+{
+	if ($direction == 'forward') 
+	{
+		return str_replace(" ", "_", $var);
+	} else {
+		return str_replace("_", " ", $var);
+	}
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
