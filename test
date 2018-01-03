@@ -1,1593 +1,12 @@
 <?php
 
-/**
- * Projects Model
- *
- * Contains user-based functions for Projects to be used within the controllers.
- * Primarily these are around display and collation of data.
- *
- * @package Core
- * @author  Steve Ball <steve@follyball.co.uk>
- * @copyright Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
- *
- */
-
-// Include the initiation file
-require_once '../app/init.php';
-
-
-class Projects_Model
-{
-	// Set any private and public functions
-	private 	$_data,
-			$_qry,
-			$_postdata,
-			$_field,
-			$_fields,
-			$_errortext,
-			$_validate,
-			$_ref,
-			// The name of the button on the create/update form
-			$_default_submit_button = 'project_submit',
-			// The name to be used when referring to what the class does
-			$_class_name = 'Projects',
-			// The database table where the basic data is held
-			$_default_table = 'projects',
-			// Validation rules for the create/update form
-			$_default_validate_data = array (
-				'number_ref' => array(
-					'validation' => array(
-						'required' => true,
-						'min' => 4,
-						'max' => 6,
-						'pregmatch' => '/^[1-9][0-9]{3,6}$/'
-					),
-					'error' =>  'The project number must be a valid number betweem 4 and 6 digits',
-				),
-				'letter_ref' => array(
-					'validation' => array(
-						'required' => true,
-						'min' => 2,
-					),
-				),
-				'title' => array(
-					'validation' => array(
-						'required' => true,
-					),
-				),
-				'description' => array(
-					'validation' => array(
-						'required' => true,
-					),
-				),
-			),
-			// Set the messages to be shown. When displayed {xxx} will be replaced with $this->_class_name
-			$_error_messages = array (
-				'success_title' => 'Success!',
-				'create_success_message' => 'The {xxx} has been created!',
-				'update_success_message' => 'The {xxx} has been updated!',
-				'create_fail_title' => 'Error! {xxx} not created',
-				'delete_fail_title' => 'Error! {xxx} not deleted',
-				'update_fail_title' => 'Error! {xxx} not updated',
-				'fail_message' => '<p>The following errors need to be rectified.....</p>',
-				'delete_success_message' => 'The {xxx} has been deleted!',
-				'not_found_title' => 'Error!',
-				'not_found_message' => 'The {xxx} was not found',
-				'no_change_title' => 'Not Posted!',
-				'no_change_message' => 'You did not change any data',
-				'warning_title' => '{xxx} delete!',
-				'warning_message' => '<p>You are about to permanantly delete this {xxx}.</p><p>This cannot be reversed<p>'
-			), 
-			$_product_array = array (
-				'hp',
-				'ms',
-				'mh',
-				'sba',
-				'cs',
-				'pp',
-				'pi',
-				'tl',
-			);
-
-	/**
-	 * Connect to the database
-	 *
-	 * @return  Database connection
-	*/
-	private function db()
-	{
-		return  DB::dbConnect();
-	} // db()
-
-	/**
-         * Get the total number of records
-	 *
-	 * @return int 	    Count of rows
-	 */
-	public function count()
-	{
-		// Select all records from the database
-		$_qry =  self::db ()->dbConnect()->query('SELECT * FROM ' . $this->default_table);
-		// Return a count of the records returned
-		return $_qry->count();
-	} // count()
-	
-	/**
-	 * Create a new record
-	 *
-	 * Collects post data, validates it and inserts it into the database
-	 *
-	 */
-	public function create ()
-	{
-		/*
-		    We unset unrequired parts of the posted data as we go along
-		    so we set the $_POST data to $_postdata, in case we need to refer to the original posted data.
-		 */
-		$_postdata = $_POST;
-		
-		/*
-			As the products are checkboxes, if they are not selected when posted, 
-			the do not show in the $_POST data at all, which would break the 
-			insert script.
-			
-			We get around this by looping through the products, which are stored in $this->_product_array, and for each missing one, we assign it with a 
-			value of 0.
-		*/
-		foreach($this->_product_array as $prod) 
-		{	
-			if(!isset($_postdata[$prod])) 
-			{
-				$_postdata[$prod] = 0;
-			}
-		}
-		/*
-		    Unset the button from $_postdata as we do not need it in the final data
-		 */
-		unset($_postdata[$this->_default_submit_button]);
-
-		/*
-		    The forms all have .req-token to prevent double-posting. We need to
-		    check that the posted token is correct and only proceed if it is.
-		 */
-		if(!Token::check(Input::get('token')))
-		{
-		     // The token check failed so flash a message
-		     $this->flashAlert  ('token');
-		} else
-		{
-			/*
-				The token check is succesful, so we again unset that from the $_POST array, to ensure we only have insert data left.
-			*/
-			unset($_postdata['token']);
-
-
-			
-			/*
-				Now $_postdata should contain only $_POST data from the inputs.
-
-				If there is data left, we attempt to validate and insert it, otherwise
-				we just flash a message.
-			 */
-			if(!empty($_postdata))
-			{ 
-				/*
-				    There is $_postdata so we attempt to validate it.
-
-				    The rules for User Group validation are stored in
-				    $this->_default_validate_data.
-
-				    We pass this path into Form_Functions::postValidate(), along with
-				    the $_postdata and the function returns a boolean 'status' as to
-				    whether validation was passed.
-
-				    If validation failed, it will also contain any validation errors that have been generated.
-				 */
-				$_validate = Form_Functions::postValidate($_postdata, $this->_default_validate_data);
-
-				/*
-				    Now we check $_validate->status to see if the validation was succesful.
-
-				    If it was we insert the data, otherwise we place the errors in a flash Alert.
-				 */
-				if($_validate->status)
-				{
-					/*
-					    $_validate->status has returned true so all is ok and we can attempt the insert.
-					    
-					    There are two other fields we require which
-					    are simply the user id of the person 
-					    inserting and the current timestamp. 
-					    We do this before attempting the insert.
-    
-					    We then attept to insert using the default 
-					    insert() function  in the DB class, passing in
-					    the name of the table, the id of the row to     
-					    update and the $_postdata.
-					 */
-					$_postdata['created_by'] = Session::get(Globals::get('user/user_session'));
-					$_postdata['created_date'] = Globals::get('settings/stamp');
-					
-					// Fix to allow NULL release_date's
-					if(!$_postdata['release_date']) 
-					{
-						$_postdata['release_date'] = NULL;
-					}
-
-					if (!self::db ()->insert($this->_default_table, $_postdata))
-					{
-						// The update was unsuccesful
-						throw new Exception('There was a problem creating an account!');
-
-						// Flash a generic error message
-						$this->flashAlert ('generic_error');
-
-						return false;
-					} else
-					{
-						// The update was succesful so set the appropriate flash alert
-						$this->flashAlert ('create_success');
-
-						return true;
-					}// if (insert ())
-
-				}  else
-				{
-					/*
-					$_validate->status has returned false so there will be errors
-					stored in the $validate->error array.
-
-					We will use this to build the up an $_errortext variable, which will
-					show the errors as <li>'s within a <ul>.
-
-					It then sets a flash message using $_errortext as the second parameter
-
-					 */
-					$_errortext = '<ul>';
-
-					// Loop through each error and add them as a <li>
-					foreach ($_validate->error as $key => $value)
-					{
-						$_errortext .= '<li>';
-						$_errortext .= $value;
-						$_errortext .= '</li>';
-					}
-
-					$_errortext .= '</ul>';
-
-					// Flash a message containing details of the errors
-					$this->flashAlert ('create_errors', $_errortext);
-
-				} // if($validate->status)
-
-			} // empty($_postdata) check
-
-		} // Token::check()
-		
-		// If there are any errors, return them
-		return (isset($_validate->error)) ? $_validate->error : null ;
-		
-	} // create()
-
-	/**	
-	 *	Return database data
-	 *
-	 *	Returns the private $this->_data array in a public function
-	 *
-	 * @return array 	Database data
-	 *
-	 **/
-	public function data ()
-	{
-		return $this->_data;
-	} // data ()
-
-	
-
-	/**
-	* Delete a record
-	*
-	* @param  int  $ref  The record ID
-	*/
-	public function delete ($ref)
-	{
-		/*
-		    We do this using the default delete() , passing
-		    in the record ID and using the default table.
-
-		    We then create a flash different flashAlert depending on 
-		    whether we have deleted the record.
-		 */
-		if(self::db ()->delete($this->_default_table, array('id', '=', $ref)))
-		{
-			$this->flashAlert ('delete_success');
-		} else {
-			$this->flashAlert ('delete_warning');
-		}
-
-	} // delete ()
-
-	/**
-	 * Find a record
-	 *
-	 * Finds a record in the default table and assigns it's details to 
-	 * $this->_data. This can then be accessed from other files using data().
-	 *
-	 * @param  string 	$ref  	Record identifier
-	 * @return Boolean/Array
-	 */
-	public function find($ref=null)
-	{
-		// Check if a record has been passed in
-		if ($ref)
-		{
-			// Search the table for the passed in $ref and correct $_field
-			// This one works different from others due to the concatentaition
-			$_qry = self::db()->query(
-				"SELECT * FROM projects WHERE concat(letter_ref,'_',number_ref) like ?", 
-				array($ref)
-			);
-		
-			// If the query returns any rows, set the groups data to $this->_data and return true
-			if ($_qry->count()) {
-				$this->_data = $_qry->first();
-				return true;
-			}
-		}
-		return false;
-	} // find ()
-
-	
-	/**
-	 * Return a list of records from the default table
-	 *
-	 * @return array  Records
-	 */
-	public function listing ()
-	{
-		// Select all groups from the database
-		$_qry = self::db ()->query('SELECT
-		    *
-		    FROM `'.$this->_default_table.'`'
-		);
-
-		// Return the results as an array
-		return $_qry->results();
-	} // listing ()
-
-	
-	/**
-	 * Update a record
-	 *
-	 * Collects post data, validates it and updates a record in the database
-	 *
-	 */
-	public function update($ref=null)
-	{
-		/*
-		    We unset unrequired parts of the posted data as we go along
-		    so we set the $_POST data to $_postdata, in case we need to refer to the original posted data.
-		 */
-		$_postdata = $_POST;
-		
-		/*
-			As the products are checkboxes, if they are not selected when posted, 
-			the do not show in the $_POST data at all, which would break the 
-			insert script.
-			
-			We get around this by looping through the products, which are stored in $this->_product_array, and for each missing one, we assign it with a 
-			value of 0.
-		*/
-		foreach($this->_product_array as $prod) 
-		{
-			if(!isset($_postdata[$prod])) 
-			{
-				$_postdata[$prod] = 0;
-			}
-		}
-		
-		/*
-		    Unset the button from $_postdata as we do not need it in the final data
-		 */
-		unset($_postdata[$this->_default_submit_button]);
-
-		/*
-		    The forms all have .req-token to prevent double-posting. We need to
-		    check that the posted token is correct and only proceed if it is.
-		 */
-		if(!Token::check(Input::get('token')))
-		{
-			    // The token check failed so flash a message
-			    # TODO: This is not working. The double-posting is prevented button
-			    # the flash is not appearing.
-			    $this->flashAlert  ('token');
-		} else
-		{
-			/*
-				The token check is succesful, so we again unset that from the $_POST array, to ensure we only have insert data left.
-			*/
-			unset($_postdata['token']);
-
-			/*
-				We now use the user group details to check against the $_POST data
-				This helps us to check which fields are actually being changed
-				and only process, validate and insert those.
-				The name="" attribute of each of the form fields matches the respective column name to allow this.
-
-				We do this by using find() and then using $this->_data which contains
-				the details from the user_groups table for this group.
-			*/
-			$_ref = $this->find($ref);
-
-			/*
-				Check if data has changed
-
-				We check each of the inputs against the respective existing group data
-				and if they match, unset the $_postdata record.
-				This will avoid errors with fields that have to be unique and also should
-				be faster as we are only actually processing changed data.
-
-			*/
-			foreach ($_postdata as $key => $value)
-			{
-				/*
-					Unset unrequired $_postdata values.
-
-					Checks the value of the input and checks the corresponding record
-					in the table to see it has changed. If not, it will unset it.
-
-					In this example
-					$_postdata['name'] = 'Admin'
-
-					It will check if $group->name contains the same value and if so, unset it.
-				*/
-				if($value == $this->_data->$key)
-				{
-					unset($_postdata[$key]);
-				}
-
-			} // End foreach loop
-
-			/*
-				Now $_postdata should contain only $_POST data that is different
-				from the corresponding user group field OR will be empty if no fields
-				have been changed.
-
-				If there is data left, we attempt to validate and update it, otherwise
-				we just flash a message.
-			*/
-			if(!empty($_postdata))
-			{	
-				/*
-				    There is $_postdata so we attempt to validate it.
-
-				    The rules for User Group validation are stored in
-				    /app/core/config_files/validation in the 'usergroups' section.
-
-				    We pass this path into Form_Functions::postValidate(), along with
-				    the $_postdata and the function returns a boolean 'status' as to
-				    whether validation was passed.
-
-				    If validation failed, it will also contain any validations errors
-				    that have been generated.
-				 */
-				$_validate = Form_Functions::postValidate($_postdata, $this->_default_validate_data);
-
-				/*
-				    Now we check $_validate->status to see if the validation was succesful.
-
-				    If it was we update the data, otherwise we place the errors in a flash Alert.
-				 */
-				if($_validate->status)
-				{
-					/*
-						$_validate->status has returned true so all is ok so attempt the update.
-
-						We do this using the default update() function in the DB class, passing in
-						the name of the table, the id of the row to update and the $_postdata.
-					 */
-					if (!self::db ()->update($this->_default_table , $this->_data->id, $_postdata))
-					{
-						// The update was unsuccesful
-						throw new Exception('There was a problem updating the account!');
-
-						// Flash a generic error message
-						$this->flashAlert ('generic_error');
-
-						return false;
-
-					} else
-					{
-						// The update was succesful so set the appropriate flash alert
-						$this->flashAlert ('update_success');
-
-						/*
-						    If we have changed the Name field, the url will no longer work
-						    as it looking for the old name.
-
-						    We check to see if the name has been posted and if so, if it matches
-						    the original name.
-
-						    If it does we re-direct to the edit page of the new name.
-						 */
-						
-						    Redirect::to ('/Admin/Projects/Edit/' . $_POST['letter_ref'] . '_' . $_POST['number_ref']);
-						
-
-						return true;
-
-					} // if (update ())
-
-				} else
-				{
-					/*
-						$_validate->status has returned false so there will be errors
-						stored in the $validate->error array.
-
-						We will use this to build the up an $_errortext variable, which will
-						show the errors as <li>'s within a <ul>.
-
-						It then sets a flash message using $_errortext as the second parameter
-
-					*/
-
-					$_errortext = '<ul>';
-
-					// Loop through each error and add them as a <li>
-					foreach ($_validate->error as $key => $value)
-					{
-						$_errortext .= '<li>';
-						$_errortext .= $value;
-						$_errortext .= '</li>';
-					}
-
-					$_errortext .= '</ul>';
-
-					// Flash a message containing details of the errors
-					$this->flashAlert  ('update_errors', $_errortext);
-
-				} // if($validate->status)
-
-			} else
-			{
-				/*
-				    There is no $_postdata so it can only be that a form was posted with no
-				    changed data.
-
-				    We just flash a message to mention this
-				 */
-				$this->flashAlert  ('no_change');
-
-			} // empty($_postdata) check
-
-		} // Token::check()
-
-	} // update ()
-
-	
-	/**
-	 *  Set a Session::flash message
-	 *
-         * @param  string 	$session The name of the session
-	 * @param  string 	$type    The type of message we are setting
-	 * @param  string 	$text    Additional alert body text
-	 * @return $_SESSION variabloe containing a Bootstrap alert
-	 *
-	 */
-	public function flashAlert  ($type, $text=null)
-	{
-		$color = 'info';
-		$dismissible = false;
-
-		/*
-		    Use a switch() on $type to specify which message to set
-		    to $heading and $body and override $color and
-		    $dismissible if required
-		*/
-		switch ($type) 
-		{
-			case 'create_errors':
-				$color = 'danger';
-				$heading = str_replace("{xxx}", $this->_class_name, $this->_error_messages['create_fail_title']);
-				$body = $this->_error_messages['fail_message'].$text;
-				$dismissible = true;
-				break;
-				
-			case 'create_success':
-				$color = 'success';
-				$heading = str_replace("{xxx}", $this->_class_name, $this->_error_messages['success_title']);
-				$body = str_replace("{xxx}", $this->_class_name, $this->_error_messages['create_success_message']);
-				$dismissible = false;
-				break;
-				
-			case 'delete_warning':
-				$color = 'danger';
-				$heading = str_replace("{xxx}", $this->_class_name, $this->_error_messages['warning_title']);
-				$body = str_replace("{xxx}", $this->_class_name, $this->_error_messages['warning_message']).'<a href="/Admin/Projects/Delete/'.$this->data()->letter_ref. '_' .$this->data()->number_ref.'/Confirm">Delete Now</a>';
-				$dismissible = false;
-				break;
-				
-			case 'delete_success':
-				$color = 'success';
-				$heading = str_replace("{xxx}", $this->_class_name, $this->_error_messages['success_title']);
-				$body = str_replace("{xxx}", $this->_class_name, $this->_error_messages['delete_success_message']);
-				$dismissible = false;
-				break;
-				
-			case 'generic_error':
-				$color = 'danger';
-				$heading = Globals::get('forms/generic_error/title');
-				$body = Globals::get('forms/generic_error/message');
-				$dismissible = true;
-				break;
-				
-			case 'no_change':
-				$heading = str_replace("{xxx}", $this->_class_name, $this->_error_messages['no_change_title']);
-				$body = str_replace("{xxx}", $this->_class_name, $this->_error_messages['no_change_message']);
-				$dismissible = true;
-				break;
-		
-			case 'not_found':
-				$color = 'warning';
-				$heading = str_replace("{xxx}", $this->_class_name, $this->_error_messages['not_found_title']);
-				$body = str_replace("{xxx}", $this->_class_name, $this->_error_messages['not_found_message']);
-				$dismissible = false;
-				break;
-		
-			case 'token':
-				$color = 'warning';
-				$heading = Globals::get('forms/token_fail/title');
-				$body = Globals::get('forms/token_fail/message');
-				$dismissible = true;
-				break;
-		
-			case 'update_errors':
-				$color = 'danger';
-				$heading = str_replace("{xxx}", $this->_class_name, $this->_error_messages['update_fail_title']);
-				$body = $this->_error_messages['fail_message'].$text;
-				$dismissible = true;
-				break;
-		
-			case 'update_success':
-				$color = 'success';
-				$heading = str_replace("{xxx}", $this->_class_name, $this->_error_messages['success_title']);
-				$body = str_replace("{xxx}", $this->_class_name, $this->_error_messages['update_success_message']);
-				$dismissible = true;
-				break;
-		
-			default:
-				# code...
-				break;
-		}
-
-		// Set the Session::flash() using Bootstrap::makeAlert() as the content
-		Session::flash(
-			'project',
-			Bootstrap::makeAlert(
-				$color,
-				$heading,
-				$body,
-				$dismissible
-			)
-		);
-
-	} // userFlash
-
-	
-	
-	
-	/**
-	 * Create the Product form
-	 * 
-	 *  Creates the project create/update form with validation and populated if necessary.
-	 * @param  array/null   	$data      		The data of the project in edit mode
-	 * @param  array       	$products    	The details of all products in the database
-	 * @return  string 	Form 
-         */
-	public function basicForm($errors=null, $data=null)
-	{
-		/**
-		 * Set the output variable
-		 *
-		 * The final output will be built as a variable called
-		 * $text so create it ready to add to
-		 *
-		 * @var null
-		 */
-		$text = '';
-	
-		/**
-		 * Set the required inputs into an array
-		 * @var array
-		 */
-		$inputs = array (
-			'letter_ref',
-			'number_ref',
-			'title',
-			'description',
-			'release_date',
-			'hp',
-			'ms',
-			'mh',
-			'sba',
-			'cs',
-			'pp',
-			'pi',
-			'tl',
-		);
-		
-		 /**
-		  * Loop through the inputs array and create variables
-		  *
-		  * See explanation in loginForm()
-		  *
-		  * The only difference here is that we also set a blank
-		  * '_formgroup' variable. We use the setFormGroups()
-		  * function in Form_Functions to set any validation errors
-		  * to it. This gets set as a class in the inputs div.formgroup
-		  *
-		  * Example
-		  * If there is a validation error on 'username', we would get
-		  * $username_formgroup ='has-danger'
-		  *
-		  */
-		foreach ($inputs as $value)
-		{	
-			
-			//Set a blank xxx_formgroup variable
-			if(null !== Input::get($this->_default_submit_button) && $errors)
-			{
-				${$value.'_validation_class'} = Form_Functions::setValidation ($value, $errors);
-			} else
-			{
-				${$value.'_validation_class'} = '';
-			}
-			
-			// Set posted data to variables if they exist
-			if($data)
-			{	
-				${$value.'_value'} = (Input::get($value)) ? Input::get($value) : $data->$value;
-			} else
-			{
-				${$value.'_value'} = (Input::get($value)) ? Input::get($value) : '';
-			}
-		}
-		
-		/*
-			Build the form
-			All of the form fields are held in functions within this class.
-			We pass in the input variable created above to populate the
-			input field after a failed login and we also pass in the created $xx_formgroup variable to show validation errors
-			as a class in the div.formgroup
-		 */
-		$text .= '<form id="'.strtolower($this->_class_name).'_form" action="" method="post" class="req-token">';
-	
-	
-		$text .= '<div class="row">';
-		$text .= '<div class="col-md-2">';
-		
-		/* 
-			Letter Ref 
-			
-			As there are not many of these and we only need the actual letters, 
-			we can just place an array here for now. 
-			
-			If we find we need this array elsewhere or need to expand on it, we 
-			will create a Globals for it.
-		 */
-		 
-		 $text .= Form_Functions::createFormGroup (
-			'select',
-			'letter_ref',
-			$letter_ref_value,
-			$letter_ref_validation_class,
-			'Help Text',
-			$data = array (
-				'pr' => 'PR',
-				'hd' => 'HD',
-				'fp' => 'FP',
-				'ic' => 'IC'
-			)
-		);
-		$text .= '</div>';
-		$text .= '<div class="col-md-10">';
-		$text .= Form_Functions::createFormGroup (
-			'text',
-			'number_ref',
-			$number_ref_value,
-			$number_ref_validation_class,
-			'Help Text'
-		);
-		$text .= '</div>';
-		$text .= '</div><!-- row -->';
-		$text .= '<div class="row">';
-		$text .= '<div class="col">';
-		$text .= Form_Functions::createFormGroup (
-			'date',
-			'release_date',
-			$release_date_value,
-			$release_date_validation_class,
-			'Help Text'
-		);
-		$text .= '</div>';
-		
-		$text .= '<div class="col">';
-		$text .= Form_Functions::createFormGroup (
-			'text',
-			'title',
-			$title_value,
-			$title_validation_class,
-			'Help Text'
-		);
-		$text .= '</div>';
-		$text .= '</div><!-- row -->';
-		$text .= '<div class="row">';
-		$text .= '<div class="col">';
-		$text .= Form_Functions::createFormGroup (
-			'textarea',
-			'description',
-			$description_value,
-			$description_validation_class,
-			'Help Text'
-		);
-		$text .= '</div>';
-		$text .= '</div><!-- row -->';
-		
-		$text .= Form_Functions::createFormGroup (
-			'checkbox',
-			'products',
-			array(
-				'hp' => $hp_value, 
-				'ms' => $ms_value, 
-				'mh' => $mh_value, 
-				'cs' => $cs_value, 
-				'pp' => $pp_value, 
-				'pi' => $pi_value, 
-				'tl' => $tl_value,
-				'sba' => $sba_value
-			),
-			null,
-			'',
-			$this->_product_array
-			
-		);
-
-	
-		$text .= '<div class="row">';
-		$text .= '	<div class="col">';
-		
-		$text .= '	<button id="submit" class="btn btn-outline-primary float-right" name="project_submit">Submit</button>';
-		
-		$text .= '	</div>';
-		$text .= '</div>';
-		
-		$text .= '</form>';
-		
-		return $text;
-	}
-    
-
-}
-
-
-
-
-<?php
-
-/**	Admin Projects Controller
-
- * Controller for any functions for Projects.
- *
- *
- * @package Core
- * @author  Steve Ball <steve@follyball.co.uk>
- * @copyright Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
- *
- */
-class Projects extends Controller
-{
-	
-	private 	$_default_name = 'Projects',
-			$_default_model = 'Projects_Model',
-			$_default_submit_button = 'project_submit',
-			$_default_crud_view = 'admin/projects/index';
-	
-	/**
-	 * Create a Project
-	 *
-	 */
-	public function create()
-	{
-		/**
-		* Set the model
-		*
-		* All functions used here are held in the user groups model.
-		*
-		* @return Class
-		*/
-		$model = $this->model($this->_default_model);
-		
-		
-		$products = $this->model('Products_Model');
-
-		
-		// Set errors initially to null
-		$_errors = null;
-		if(null !== Input::get($this->_default_submit_button))
-		{
-		    $_errors = $model->create();
-		} // if posted
-
-		/*
-		    Pass the data to the view.
-
-		    As well as the page name and page type, we send a 'group' set to null
-		    to prevent the view from attempting to populate the form.
-		*/
-		$this->view(
-			$this->_default_crud_view,
-			[
-				'page_name' => 'Create ' . $this->_default_name,
-				'page_type' => 'create',
-				'form' => $model->basicForm($_errors, $data=null)
-			]
-		);
-	} // index()
-
-	/**
-	* Delete a Project
-	*
-	* @param  int/string   $group      Group Identifier
-	* @param  string       $confirm    Confirms the wish to delete
-	*/
-	public function delete($project, $confirm=null)
-	{
-		/**
-		* Set the model
-		*
-		* All functions used here are held in the user model.
-		*
-		* @return Class
-		*/
-		$model = $this->model($this->_default_model);
-
-		// Check the group exists.
-		if(!$model->find($project))
-		{
-		    /*
-			The group does not exist so set a flash alert and set $view to null
-		     */
-		    $model->flashAlert  ('not_found');
-		    $view = 'null';
-
-		} else
-		{
-			/*
-				The group does exist so set $view to warning.
-
-				This will cause the pre-delete and confirmation warning to
-				appear in the view.
-			*/
-			$view = 'warning';
-			$model->flashAlert ('delete_warning');
-			
-			// Check to see if the delete request has been confirmed
-			if($confirm)
-			{
-				/*
-				    The confirm does exist so delete the group using the default delete () function.
-
-				    Also set $view to confirm to prevent the pre-delete and confirmation warning
-				    appearing in the view.
-				 */
-				$model->delete($model->data()->id);
-				$view = 'confirm';
-				$model->flashAlert ('delete_success');
-
-			} // if($confirm)
-
-		} // if(!$projects->find($project))
-
-		/*
-		    Pass the data to the view.
-
-		    As well as the page name and page type, we send a 'view' to tell the view
-		    if we are pre or post delete.
-		*/
-		$this->view(
-			$this->_default_crud_view,
-			[
-				'page_name' => 'Delete ' . $this->_default_name,
-				'page_type' => 'delete',
-				'ref' => $model->data(),
-				'view' => $view,
-
-			]
-		);
-	} // delete ()
-
-	/**
-	 * Edit a Record
-	 *
-	 * @param  int/string   $ref  Record Identifier
-	 */
-	public function edit($ref)
-	{	
-		// Set a null variable to hold any errors
-		$_errors = null;
-		
-		// By default we want to show the form so set to true
-		$_form = true;
-		
-		/**
-		* Set the model
-		*
-		* All functions used here are held in the user model.
-		*
-		* @return Class
-		*/
-		$model = $this->model($this->_default_model);
-
-		/*
-		    If no record has been set, we do nothing other than flash a
-		    message, otherwise we check the record exists.
-		 */
-		if(!$ref)
-		{
-			// The record is not set so flash the message and set form to false
-			$model->flashAlert ('not_found');
-			$_form = false;
-		} else
-		{
-			// The record is set so attempt to find it.
-			if($model->find($ref))
-			{
-				/*
-				    The record exists so set the $data parameter that is passed
-				    to the form as 'record', to contain the details.
-				 */
-				$data = $model->data();
-			} else
-			{
-				// The record is not set so flash the message and set form to false
-				$model->flashAlert ('not_found');
-				$_form = false;
-			 }
-
-			/*
-				If the form has been posted, then attempt to update the record by
-				using update().
-			 */
-			if(null !== Input::get($this->_default_submit_button))
-			{
-				$_errors = $model->update($data->id);
-			}
-		}
-		
-		// If $_form is set to true, we want to pass that to the view, otherwise set it to blank
-		$_form = ($_form) ? $model->basicForm($_errors, $data) : '';
-		
-		/*
-		    Pass the data to the view.
-
-		    As well as the page name and page type, we send a populated form if required.
-		*/
-		$this->view(
-			$this->_default_crud_view,
-			[
-				'page_name' => 'Edit ' . $this->_default_name,
-				'page_type' => 'edit',
-				'form' => $_form
-			]
-		);
-	} // edit ()
-
-	/**
-	 * Shows a list of records
-	 *
-	 * Sends an array of records to the view passed in as an array
-	 *
-	 * @return view
-	 *
-	 */
-	public function index()
-	{
-		/**
-		* Set the model
-		*
-		* All functions used here are held in the user model.
-		*
-		* @return Class
-		*/
-		$model = $this->model($this->_default_model);
-
-		/*
-		    Pass the data to the view.
-
-		    As well as the page name and page type, we send a 'records' 
-		    containing an array of returned data.
-		*/
-		$this->view(
-			$this->_default_crud_view,
-			[
-				'page_name' => $this->_default_name . ' Listing',
-				'page_type' => 'list',
-				'records' => $model->listing()
-			]
-		);
-
-	} // index()
-	
-	
-
-}
-
-
-
-
-
-
-
-
-
-
-<?php
-
-/**
- * Admin Projects View
- *
- *  View for all Projects Controllers. The method we are using is passed in as
- *  $data->page_type and the decides what we are going to show.
- *
- * @package 	Core
- * @author  	Steve Ball <steve@follyball.co.uk>
- * @copyright 	Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
- * @example 	/app/views/admin.users/list.php->index()
- * @link 		http://site.com/Admin/Projects{xxx}/{xxx}
- *
- */
-
-// Set the default $_SESSION variable for the page 
-$session_variable = 'project';
- 
-// Set the default controller path. This will be used for links to Edit and Delete
-$controller_path = '/Admin/Projects/';
- 
-/**
-  * Build the output string that will be passed to the template
-  * @var string
-  */
-$output = '';
-
-/*
-    If there is a 'usergroup' flash Alert for errors or messages, show it
- */
-if (Session::exists($session_variable)) {
-     $output .= '<div class="col-sm-12">';
-	 $output .= Session::flash($session_variable);
-	 $output .= '</div>';
- }
-
-
- /**
- * Collect the passed in data and turn it into an object
- * @var array
- */
-$data = (object)$data;
-
-/**
- * Listing
- *
- * Takes an array passed in as $data->records and creates a 
-  * table with edit and delete buttons.
- */
-if($data->page_type == 'list')
-{
-	// Start building the table to hold the user group list
-	$output .= '<table class="table">';
-
-	// <thead>
-	$output .= '<thead class="thead-inverse">';
-	$output .= '  <tr>';
-	$output .= '	<th>#</th>';
-	$output .= '	<th>Ref</th>';
-	$output .= '	<th>Title</th>';
-	$output .= '	<th></th>';
-	$output .= '  </tr>';
-	$output .= '</thead>';
-
-	// <tbody>
-	$output .= '<tbody>';
-
-	/**
-	* Loop through the records array and build a separate 
-	* table row for each one.
-	*/
-	foreach ($data->records as $key => $project)
-	{
-		// Start the table row with a full <tr>
-		$output .= '<tr id="'.$project->letter_ref.'_'.$project->number_ref.'">';
-		
-		// Add the id as the first <td> 
-		$output .= '  	<th scope="row">'.$project->id.'</th>';
-		
-		// Add the a concatenation of letter_ref, _ and number_ref to the next <td> 
-		$output .= '  	<td>'.$project->letter_ref.'_'.$project->number_ref.'</td>';
-
-		// Add the title to the next <td> as a link to the Edit page, using a concatenation of letter_ref, _ and number_ref as the parameter
-		$output .= '  	<td><a href="'.$controller_path.'Edit/'.$project->letter_ref.'_'.$project->number_ref.'">'.$project->title.'</a></td>';
-
-		// Create the Edit and delete buttons in the last <td>
-		$output .= '  	<td><a href="'.$controller_path.'Edit/'.$controller_path.$project->letter_ref.'_'.$project->number_ref.'"><i class="fa fa-pencil text-success" aria-hidden="true"></i></a> <a href="'.$controller_path.'Delete/'.$project->letter_ref.'_'.$project->number_ref.'"><i class="fa fa-times text-danger" aria-hidden="true"></i></a></td>';
-
-		// Close the row
-		$output .= '</tr>';
-	}
-
-    // Finish of all remaining table tags
-    $output .= '</tbody>';
-    $output .= '</table>';
-
-} // listing
-
-/**
- * Edit
- *
- * Simply shows the form passed in from the controller, already populated 
- * with the correct data, ready to update a record.
- *
- * Anything else, including records not found and messages after a $_POST 
- * attempt are handled by session flashes and show at the top of this page.
- */
-if($data->page_type == 'edit')
-{
-        $output .= $data->form;
-} // edit
-
-/**
- * Create
- *
- * Simply shows the form passed in from the controller, unpopulated, 
- * ready to update a record.
- *
- * Anything else, including messages after a $_POST 
- * attempt are handled by session flashes and show at the top of this page.
- */
-if($data->page_type == 'create')
-{
-    $output .= $data->form;
-} // create
-
-/*
-* User Group Delete
-*
-* If the delete request has not been confirmed, it shows a warning message with a
-* link to delete it.
-*
-* If the delete request has been confirmed, a flash Alert will have been created in
-* the controller and shown at the top of this page.
-*/
-if($data->page_type == 'delete')
-{
-
- // delete
-}
-
-// Construct the template
-$template = new Admin_Template(
-    $output,
-    $page_title = $data->page_name
-);
-
-
-
-
-
-
-
-
-
-
-
-
-<?php
-
-/**
- * Form Functions
- *
- * Contains functions for quick building and processing of forms
- *
- * @package Core
- * @author  Steve Ball <steve@follyball.co.uk>
- * @copyright Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
- */
-class Form_Functions {
-
-	/**
-	 * Validate posted data
-	 *
-	 * Validates any $_POST data submitted by a form against a
-	 * specific set of rules stored in /app/core/config_files/validation.php
-	 *
-	 * The posted data is looped through and for each one we check to see if
-	 * a validation rule exists.
-	 *
-	 *
-	 * For this to work, it is best that the input name="" matches the database
-	 * column
-	 *
-	 * @param  array  	$data        	$_POST data
-	 * @param  string 	$globals_path 	The Gloabals::get() path
-	 * @return boolean/errors           True/False insert status and errors
-	 * @example postValidate($postdata, 'validation/user/')
-	 */
-	public static function postValidate($data, $globals_path)
-	{	
-		$validate_array = null;
-		/*
-			Loop through the posted data
-
-			If we have
-			'Username' => 'MrUser',
-			'FirstName' => 'Mister',
-			'LastName' => 'User'
-
-			And the validation paths for each were
-			'validation/user/Username',
-			'validation/user/FirstName',
-			'validation/user/LastName'
-
-			We would have the following in the array
-
-			$validate_array = array (
-				'Username' => 'validation/user/Username',
-				'FirstName' => 'validation/user/FirstName',
-				'LastName' => 'validation/user/LastName'
-
-			)
-
-		 */
-		if(is_array($globals_path))
-		{	
-			foreach ($data as $post_data => $input)
-			{
-				if(isset($globals_path[$post_data]))
-				{
-					$validate_array[$post_data] = $globals_path[$post_data];
-				}
-			}
-		} else 
-		{	
-			
-			foreach ($data as $post_data => $input)
-			{
-				$validate_array[$post_data] = Globals::get($globals_path.$post_data);
-			}
-		}	
-
-		// Create a new empty object to hold any validation data
-		$valid = (object)array();
-
-		// Open a new instance of the Validate() class
-		$validate = new Validate ();
-
-		/*
-			Finally we pass the $_POST data and the validation array
-			into Validate->check() where the two are checked against each
-			other.
-		 */
-		$validation = $validate->check(
-			$data,
-			$validate_array
-		);
-
-		/*
-			We can use Validate->passed to check to see if the validation was
-			succesful.
-			If it was just add ->status to the $valid array and set
-			it to true.
-			If validation was not succesful add ->status to the $valid array and set it to false and also add an errors as ->error.
-		 */
-		if($validation->passed()) {
-			$valid->status = true;
-		} else {
-			$valid->status = false;
-			$valid->error = $validation->errors();
-
-		}
-
-		// Return the array
-		return $valid;
-	} // postValidate ()
-
-	/**
-	 * Set error validation for a form field
-	 *
-	 * Adds 'has-danger' to a inputs form-group if any validation errors
-	 * exist. This is called when building the form.
-	 *
-	 * @param 	string 			$value  	Name of the form field
-	 * @param 	array 			$errors 	List of errored fields
-	 * @return 	string/null 	'has-danger' if required
-	 */
-	/**
-	 * Set error validation for a form field
-	 *
-	 * Adds 'has-danger' to a inputs form-group if any validation errors
-	 * exist. This is called when building the form.
-	 *
-	 * @param 	string 			$value  	Name of the form field
-	 * @param 	array 			$errors 	List of errored fields
-	 * @return 	string/null 	'has-danger' if required
-	 */
-	public static function setValidation ($value, $errors=null)
-	{
-		/*
-			We only do anything if $errors exists and the name of
-			the field ($value) is in the array
-		 */
-		if($errors && isset($errors[$value]))
-		{
-			// An error for the field exists so retun 'has-danger'
-			return 'is-invalid';
-		} else
-		{
-			// No error for the field exists so return nothing
-			return 'is-valid';
-		}
-	} // setFormGroups()
-	
-	public static function createFormGroup ($type, $field_name, $value, $validation_class = null, $help = null, $data = null)
-	{
-		if($type=='text')
-		{
-			$text  = '<div class="form-group">';
-			$text .= self::createLabel ($field_name);
-			$text .= '	<input type="text" class="form-control '. $validation_class .'" id="'.$field_name.'" name="'.$field_name.'" placeholder="Enter '.ucfirst($field_name).'" value="'.$value.'" autocomplete="off"';
-
-			if($help)
-			{
-				$text .= 'aria-describedby="'.$field_name.'Help" ';
-			}
-
-			$text .= '>';
-
-			if($help) 
-			{
-				$text .= '		<small id="'.$field_name.'Help" class="form-text text-muted">'.$help.'</small>';
-			}
-
-			$text .= '		</div>';
-		}
-	
-	
-	        if($type=='date')
-		{
-			$text  = '<div class="form-group">';
-			$text .= self::createLabel ($field_name);
-			$text .= '	<input type="date" class="form-control '. $validation_class .'" id="'.$field_name.'" name="'.$field_name.'" placeholder="Enter '.ucfirst($field_name).'" value="'.$value.'" autocomplete="off"';
-
-			if($help)
-			{
-				$text .= 'aria-describedby="'.$field_name.'Help" ';
-			}
-
-			$text .= '>';
-
-			if($help) 
-			{
-				$text .= '		<small id="'.$field_name.'Help" class="form-text text-muted">'.$help.'</small>';
-			}
-
-			$text .= '		</div>';
-		}
-	
-		if($type=='checkbox')
-		{	
-			$text = self::createLabel ($field_name);
-			$text  .= '<div class="form-group">';
-
-			foreach ($data as $key => $product) 
-			{
-				$checked = (isset($value[$product]) && $value[$product] == '1') ? 'checked' : '' ;
-
-				$text .= '<label class="custom-control custom-checkbox" for="'.$product.'">';
-				$text .= '<input type="checkbox" class="custom-control-input" id="'.$product.'" name="'.$product.'" value="1" ' . $checked . '>';
-				$text .= '<span class="custom-control-indicator"></span>';
-				$text .= '<span class="custom-control-description">'.strtoupper($product).'</span>';
-				$text .= '</label>';
-			}
-			
-			$text .= '		</div>';
-		}
-		
-		if($type=='textarea')
-		{
-			$text  = '<div class="form-group">';
-			$text .= self::createLabel ($field_name);
-			$text .= '	<textarea  class="form-control '. $validation_class .'" id="'.$field_name.'" name="'.$field_name.'" rows="3" ';
-
-			if($help)
-			{
-				$text .= 'aria-describedby="'.$field_name.'Help" ';
-			}
-
-			$text .= '>';
-			$text .= $value;
-			$text .= '</textarea>';
-			if($help) 
-			{
-				$text .= '		<small id="'.$field_name.'Help" class="form-text text-muted">'.$help.'</small>';
-			}
-
-			$text .= '		</div>';
-		}
-
-		if($type=='select')
-		{
-
-			$text  = '<div class="form-group">';
-			$text .= self::createLabel ($field_name);
-
-			$text .= '  <select class="form-control '. $validation_class .'" id="'.$field_name.'" name="'.$field_name.'">';
-
-			if(!$value)
-			{
-				$text .= '<option value="">Please Select.....</option>';
-			}
-			
-			foreach ($data as $key => $type) 
-			{
-				$text .= '<option value="'.$key.'"';
-
-				if ($value == $key) {
-					$text .= ' selected';
-				}
-				
-				$text .= '>'.$type.'</option>';
-			}
-			
-			$text .= '  </select>';
-
-			if($help) 
-			{
-				$text .= '		<small id="'.$field_name.'Help" class="form-text text-muted">'.$help.'</small>';
-			}
-
-			$text .= '		</div>';
-		}
-
-		return $text;
-	}
-
-    public static function createLabel ($field_name)
-    {
-        return '<label class="form-control-label" for="'.$field_name.'">'.ucwords(str_replace("_", " ", $field_name)).'</label>';
-    }
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<?php
-
 class Validate {
     private $_passed = false,
             $_errors = array(),
             $_db = null;
 
     public function __construct() {
-        $this->db = DB::dbConnect();
+        $this->_db = DB::dbConnect();
     }
     /**    check()
      *
@@ -1662,8 +81,9 @@ class Validate {
              *    $rule = 'unique'         $rule_value = 'users'
              *
             **/
-	    if(isset($rules['validation'])){
-		    foreach ($rules['validation'] as $rule => $rule_value) {
+	    if(isset($rules)){
+		    
+		    foreach ($rules as $rule => $rule_value) {
 			// Check if the field has been posted
 			/*
 			 *    Using the 'username' example
@@ -1680,43 +100,48 @@ class Validate {
 			 *
 			**/
 			if(isset($source[$item])) {
-			    $value = trim($source[$item]);
+				if(!is_array($source[$item])) 
+				{
+					$value = trim($source[$item]);
+				}
+			    
 			} else {
 			    $value = null;
 			}
 			// Convert $item to HTML entities
 			$item = escape($item);
+			
+		
+			$error_field_name = (isset($rules['field_name'])) ? $rules['field_name'] : $item;
 
 
-
-
-			if ($rule === 'required' && (empty($value) || !isset($value))) {
-			    if(isset($rules['error'])) {
-				$this->addError($rules['error'], $item);
+			if ($rule === 'required' && (!is_array($value) && !isset($value) || !$value)) {
+			    if(isset($rules['error_wording'])) {
+				$this->addError($rules['error_wording'], $error_field_name);
 			    } else {
-				$this->addError(ucfirst($item) . " is required", $item);
+				$this->addError(ucfirst($error_field_name) . " is required", $error_field_name);
 			    }
 
 			}  else if(!empty($value)) {
 			    switch ($rule) {
 				case 'min':
 				    if (strlen($value) < $rule_value) {
-					$this->addError("The {$item} must be a minimum of {$rule_value} characters", $item);
+					$this->addError("The {$item} must be a minimum of {$rule_value} characters", $error_field_name);
 				    }
 				break;
 
 				case 'max':
 				    if (strlen($value) > $rule_value) {
-					$this->addError("The {$item} must be a maximum of {$rule_value} characters", $item);
+					$this->addError("The {$item} must be a maximum of {$rule_value} characters", $error_field_name);
 				    }
 				break;
 
 				case 'matches':
 				    if ($value != $source[$rule_value]) {
-					if(isset($rules['error'])) {
-					    $this->addError($rules['error'], $item);
+					if(isset($rules['error_wording'])) {
+					    $this->addError($rules['error_wording'], $error_field_name);
 					} else {
-					    $this->addError("{$rule_value} must match {$item}", $item);
+					    $this->addError("{$rule_value} must match {$item}", $error_field_name);
 					}
 
 				    }
@@ -1725,27 +150,17 @@ class Validate {
 				case 'unique':
 				    $check = $this->db->get($rule_value, array($item, "=", $value));
 				    if ($check->count()) {
-					$this->addError(ucfirst($item) . " already exists", $item);
+					$this->addError(ucfirst($error_field_name) . " already exists", $error_field_name);
 				    }
 				break;
 
-				// New version once validation is in Models
-				case 'pregmatch':
-				if (!preg_match($rule_value, $value)) {
-				    if(isset($rules['error'])) {
-					$this->addError($rules['error'], $item);
-				    } else {
-					$this->addError("{$rule_value} must preg match {$item}", $item);
-				    }
-				}
-				break;
-				
+			
 				case 'preg_match':
-				if (!preg_match(Globals::get('validation/preg_match/'.$rule_value), $value)) {
-				    if(isset($rules['error'])) {
-					$this->addError($rules['error'], $item);
+				if (!preg_match(Globals::get('validation_rules/'.$rule_value), $value)) {
+				    if(isset($rules['error_wording'])) {
+					$this->addError($rules['error_wording'], $error_field_name);
 				    } else {
-					$this->addError("{$rule_value} must preg match {$item}", $item);
+					$this->addError("{$rule_value} must preg match {$item}", $error_field_name);
 				    }
 
 				}
@@ -1800,6 +215,937 @@ class Validate {
 
 
 
+<?php
+
+/**
+ * @package Core
+ * @author  Steve Ball <steve@follyball.co.uk>
+ * @copyright Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
+ *
+ */
+
+// Include the initiation file
+require_once '../config.php';
+
+class Shared_Generate {
+	
+	protected function global_basics_validation () 
+	{
+		return array(
+			'scenarios' => array(
+				'required' => true,
+				'min' => 1,
+				'max' => 100,
+			),
+			'refNumber' => array(
+				'required' => true,
+				'min' => 2,
+				'max' => 6,
+				'error_wording' => 'Must have a reference number'
+			),
+		);
+	}
+	
+	public function set_basics_array () 
+	{
+		$array = array();
+		for($scenario=1; $scenario <= $_SESSION['post_data']['scenarios']; $scenario++) 
+		{
+			$array[$scenario] = array (
+			);
+			
+			if($_SESSION['post_data']['trans_type'] == 'p') 
+			{
+				$key = array_rand($_SESSION['post_data']['pay_method']);
+				$array[$scenario]['pay_method'] = $_SESSION['post_data']['pay_method'][$key];
+			}
+			
+			if($_SESSION['post_data']['test_or_live'] == 'l') 
+			{
+				unset($_SESSION['post_data']['set_link']);
+			}
+		}
+		
+		return $array;
+	}
+
+}
+
+
+
+
+
+
+
+
+
+<?php
+
+/**
+ * @package Core
+ * @author  Steve Ball <steve@follyball.co.uk>
+ * @copyright Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
+ *
+ */
+
+// Include the initiation file
+require_once '../config.php';
+
+class Pet_Form Extends Shared_Form {
+	
+	 public function __construct()
+	{
+		return '  form';
+	} //__construct ()
+
+	/**
+	 * Create a new Database instance
+	 *
+	 * Creates a new instance of the database class that can be assigned to a
+	 * variable and re-used.
+	 *
+	 * @return Database connection
+	 * @example $this->db = DB::dbConnect();
+	 */
+	private function dbConnect()
+	{
+		// If an instance has not already been set, set it
+		if(!isset(self::$_instance)) {
+			self::$_instance = new DB();
+		}
+		// Return the instance
+		return self::$_instance;
+	} // dbConnect()
+	
+	public function basics($errors) 
+	{
+		return $this->basic_details($errors);
+	}
+	
+	public function people($errors) 
+	{
+		return $this->people_details($errors);
+	}
+
+}
+
+
+
+
+
+
+
+
+
+<?php
+
+/**
+ * @package Core
+ * @author  Steve Ball <steve@follyball.co.uk>
+ * @copyright Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
+ *
+ */
+
+// Include the initiation file
+require_once '../config.php';
+
+class Shared_Form {
+	
+	 public function __construct()
+	{
+		
+	} //__construct ()
+
+	/**
+	 * Create a new Database instance
+	 *
+	 * Creates a new instance of the database class that can be assigned to a
+	 * variable and re-used.
+	 *
+	 * @return Database connection
+	 * @example $this->db = DB::dbConnect();
+	 */
+	private function dbConnect()
+	{
+		// If an instance has not already been set, set it
+		if(!isset(self::$_instance)) {
+			self::$_instance = new DB();
+		}
+		// Return the instance
+		return self::$_instance;
+	} // dbConnect()
+	
+	protected function basic_details($errors)
+	{
+		$output = '<div class="row">';
+		
+		$output .= '<div class="col-12 col-md-5">';
+		$output .=  $this->scenarios ($errors);
+		$output .= '</div><!-- scenarios -->';
+		
+		$output .= '<div class="col-12 col-md-7">';
+		$output .= $this->ref ($errors);
+		$output .= '</div><!-- ref -->';
+		
+		$output .= '<div class="col-12">';
+		$output .= $this->title ($errors);
+		$output .= '</div><!-- description -->';
+		
+		$output .= '<div class="col-12">';
+		$output .= '<div class="row">';
+		
+		// Transtype
+		$output .= '<div id="trans-type" class="col-12 col-md-4">';
+		$output .= $this->trans_type ($errors);
+		$output .= '</div><!-- #trans-type -->';
+		
+		// Payment method
+		$payment_visibility = (isset($_POST['trans_type']) && $_POST['trans_type']=='p') ? 'visible' : 'invisible' ;
+		$output .= '<div id="payment-method" class="col-12 col-md-8 ' . $payment_visibility . '">';
+		$output .= $this->payment_method ($errors);
+		$output .= '</div><!-- #payment-method -->';
+		
+		
+		$output .= '</div><!-- row -->';
+		$output .= '</div><!-- description -->';
+		
+		$output .= '</div><!-- row -->';
+		
+		$output .= '<hr>';
+		
+		$output .= '<div class="row">';
+		$output .= '<div id="site-type" class="col-4">';		
+		$output .= $this->site_type ($errors);
+		$output .= '</div><!-- #site-type -->';
+		
+		$link_visibility = (!isset($_POST['test_or_live']) || $_POST['test_or_live']=='t') ? 'visible' : 'invisible' ;
+		$output .= '<div id="set-link" class="col-8 ' . $link_visibility . '">';
+		$output .= $this->set_link ($errors);
+		$output .= '</div><!-- #payment-method -->';
+		
+		$output .= '</div><!-- row -->';
+		
+		
+		return $output;
+	} // basic_details ()
+	
+	
+	private function scenarios ($errors) 
+	{	
+		// Set error_details to null to clear the last function
+		$this->error_details = null;
+		
+		// Set a variable to be used throughout. This should match the name of the table column it is populating. 
+		$variable = 'scenarios';
+		
+		// If the form has been posted (and therefore failed) set the value to re-populate with
+		$value = (null !== Input::get($variable)) ? Input::get($variable) :  '50';
+		
+		/*
+			If there are errors for this input, use the set_errors() function to set the field and label classes, as well as the 
+			error text to show below the input.
+		*/ 
+		if(isset($errors[$variable])) 
+		{
+			$this->error_details =$this->error_details =$this->error_details = $this->set_errors($errors[$variable]); 
+		}
+		
+		// Start the label
+		$output = '<label for="' . $variable . ' " class="font-weight-bold ';
+		
+		// If there is a validation error, add the class to the label
+		$output .= $this->set_label_error();
+		
+		// End the label
+		$output .=  '">' . ucfirst($variable) . ' <span class="text-danger">*</span></label>';
+		
+		// Set the help stuff
+		$output .= helpBox (
+			array (
+				'title' => 'Scenarios',
+				'content' => 'The number of scenarios that you want included. It is recommended to do a maximum of 50 at a time.',
+				'placement' => 'bottom'
+				//'placement' => 'right'
+			)
+		); 
+		
+		// Start the input
+		$output .= '<input type="number" class="form-control numScenarios mb-2 ';
+		
+		// If there is a validation error, add the class to the input
+		$output .= $this->set_input_error();
+		
+		// End the input
+		$output .=  '" name="' . $variable . '" min="1" max="100" value="'.$value.'">';
+		
+		// If there is a validation error, add the error text
+		$output .= $this->set_error_text();
+		
+		return $output;
+
+	} // scenarios ()
+	
+	private function ref ($errors) 
+	{
+		// Set error_details to null to clear the last function
+		$this->error_details = null;
+		
+		// Set a variable to be used throughout. This should match the name of the table column it is populating. 
+		$variable = 'refNumber';
+		
+		// If the form has been posted (and therefore failed) set the value to re-populate with
+		$value = (null !== Input::get($variable)) ? Input::get($variable) :  '';
+		
+		/*
+			If there are errors for this input, use the set_errors() function to set the field and label classes, as well as the 
+			error text to show below the input.
+		*/ 
+		if(isset($errors[$variable])) 
+		{
+			$this->error_details = $this->set_errors($errors[$variable]); 
+		}
+		
+		// Start the label
+		$output = '<label for="' . $variable . ' " class="font-weight-bold ';
+		
+		// If there is a validation error, add the class to the label
+		$output .= $this->set_label_error();
+		
+		// End the label
+		$output .=  '">' . ucfirst($variable) . ' <span class="text-danger">*</span></label>';
+		
+		// Set the help stuff
+		$output .= helpBox (
+			array (
+				'title' => 'Reference',
+				'content' => 'Use the reference number for your test, including the letters (PR/HD/etc) so it is easier to find them again at a later date.<br>If you are just playing around, use something like TEST or something obvious. Do not use real references for test runs.',
+				//'placement' => 'right'
+			)
+		); 
+		
+		// Start the input
+		$output .= '<input type="text" class="form-control ' . $variable . ' mb-2 ';
+		
+		// If there is a validation error, add the class to the input
+		$output .= $this->set_input_error();
+		
+		// End the input
+		$output .=  '" name="' . $variable . '" placeholder="eg. PR6733" value="'.$value.'">';
+		
+		// If there is a validation error, add the error text
+		$output .= $this->set_error_text();
+		
+		return $output;
+		
+	} // ref ()
+	
+	private function title ($errors) 
+	{
+		// Set error_details to null to clear the last function
+		$this->error_details = null;
+		
+		// Set a variable to be used throughout. This should match the name of the table column it is populating. 
+		$variable = 'title';
+		
+		// If the form has been posted (and therefore failed) set the value to re-populate with
+		$value = (null !== Input::get($variable)) ? Input::get($variable) :  '';
+		
+		/*
+			If there are errors for this input, use the set_errors() function to set the field and label classes, as well as the 
+			error text to show below the input.
+		*/ 
+		if(isset($errors[$variable])) 
+		{
+			$this->error_details = $this->set_errors($errors[$variable]); 
+		}
+		
+		// Start the label
+		$output = '<label for="' . $variable . ' " class="font-weight-bold ';
+		
+		// If there is a validation error, add the class to the label
+		$output .= $this->set_label_error();
+		
+		// End the label
+		$output .=  '">' . ucfirst($variable) . ' <span class="text-danger">*</span></label>';
+		
+		// Set the help stuff
+		$output .= helpBox (
+			array (
+				'title' => 'Title',
+				'content' => 'Give title with a clear description of the run to make it easier to find and re-run at a later date.<br>
+				If you are running several batches, number them (such as Preload Quotes 1, Preload Quotes 2) so it is easier to tell them apart.',
+				//'placement' => 'right'
+			)
+		); 
+		
+		// Start the input
+		$output .= '<input type="text" class="form-control ' . $variable . ' mb-2 ';
+		
+		// If there is a validation error, add the class to the input
+		$output .= $this->set_input_error();
+		
+		// End the input
+		$output .=  '" name="' . $variable . '" placeholder="eg. Preload Quotes 3" value="'.$value.'">';
+		
+		// If there is a validation error, add the error text
+		$output .= $this->set_error_text();
+		
+		return $output;
+	} // description ()
+	
+	private function trans_type ($errors) 
+	{	
+		$output = '<label for="description" class="font-weight-bold">TransType <span class="text-danger">*</span></label>';
+		$output .= helpBox (
+			array (
+				'title' => 'TransType',
+				'content' => 'Choose whether you want the scenarios to be quotes or policies.
+				<br>
+				There is currently no function to mix these so, if you need both, you will need to run separate batches.',
+				//'placement' => 'right'
+			)
+		); 
+		
+		$trans_type_array = array (
+			'Quotes' => array (
+				'data' => 'q'
+			), 
+			'Policies' => array (
+				'data' => 'p'
+			)
+		);
+
+		$checked = (null !== Input::get('trans_type')) ? Input::get('trans_type') :  'q';
+		foreach ($trans_type_array as $key => $value) 
+		{
+			$output .= '<div class="custom-control custom-radio">';
+			
+			$output .= '<input type="radio"  id="trans_type_'.$value['data'].'"  name="trans_type" class="custom-control-input" value="'.$value['data'].'"';
+			if($checked == $value['data']) {$output .= ' checked';}
+			$output .= '>';
+			$output .= '<label class="custom-control-label" for="trans_type_'.$value['data'].'">'.$key.'</label>';
+			
+			$output .= '</div>';
+		}
+
+
+		
+		
+		return $output;
+	} // scenarios ()
+	
+	private function site_type ($errors) 
+	{	
+		
+			
+		$output = '<label for="description" class="font-weight-bold">Test or Live <span class="text-danger">*</span></label>';
+		$output .= helpBox (
+			array (
+				'title' => 'Test or Live',
+				'content' => 'Choose whether you want the scenarios to be run in a specific test environment or in live.
+				<br>
+				If live is selected, all policyholder first names will be \'Citestuser\' and all scenarios will be quotes, even if policies had been selected.',
+				//'placement' => 'right'
+			)
+		); 
+		
+		$output .= '<div class="custom-controls-stacked">';
+		
+		$trans_type_array = array (
+			'Test' => array (
+				'data' => 't'
+			), 
+			'Live' => array (
+				'data' => 'l'
+			)
+		);
+		
+		$checked = (null !== Input::get('test_or_live')) ? Input::get('test_or_live') :  't';
+		foreach ($trans_type_array as $key => $value) 
+		{
+			
+			$output .= '<div class="custom-control custom-radio">';
+			
+			$output .= '<input type="radio"  id="test_or_live'.$value['data'].'"  name="test_or_live" class="custom-control-input" value="'.$value['data'].'"';
+			if($checked == $value['data']) {$output .= ' checked';}
+			$output .= '>';
+			$output .= '<label class="custom-control-label" for="test_or_live'.$value['data'].'">'.$key.'</label>';
+			
+			$output .= '</div>';
+
+		}
+
+		$output .= '</div><!-- .custom-controls-stacked -->';
+		
+		
+		return $output;
+	} // scenarios ()
+	
+	
+	public function payment_method ($errors) 
+	{
+		// Set error_details to null to clear the last function
+		$this->error_details = null;
+		
+		// Set a variable to be used throughout. This should match the name of the table column it is populating. 
+		$variable = 'pay_method';
+		
+		/*
+			If there are errors for this input, use the set_errors() function to set the field and label classes, as well as the 
+			error text to show below the input.
+		*/ 
+		if(isset($errors[$variable])) 
+		{
+			$this->error_details = $this->set_errors($errors[$variable]); 
+		}
+
+		// Start the label
+		$output = '<label for="' . $variable . ' " class="font-weight-bold ';
+		
+		// If there is a validation error, add the class to the label
+		$output .= $this->set_label_error();
+		
+		// End the label
+		$output .=  '">' . ucwords(str_replace("_", " ", $variable)) . ' <span class="text-danger">*</span></label>';
+
+		// Set the help stuff
+		$output .= helpBox (
+			array (
+				'title' => 'Payment method',
+				'content' => 'Select all payment methods that you want included.
+				<br>
+				Note that Monthly payments are not always available. If this is the case, it will default to annual.',
+				//'placement' => 'right'
+			)
+		); 
+		
+
+		$pay_method_array = array (
+			'Monthly' => array (
+				'data' => 'm'
+			), 
+			'Annual' => array (
+				'data' => 'a'
+			)
+		);
+		
+		// Exclude Monthly payments from products that do not allow them
+		if($_GET['product'] == 'tl') 
+		{
+			unset($pay_method_array['Monthly']);
+		}
+		
+		$checked = (null !== Input::get('pay_method')) ? Input::get('pay_method') :  array('a');
+
+		foreach ($pay_method_array as $key => $value) 
+		{
+			
+			$output .= '<div class="custom-control custom-checkbox">';
+			
+			$output .= '<input type="checkbox"  id="pay_method'.$value['data'].'"  name="pay_method[]" class="custom-control-input" value="'.$value['data'].'"';
+			if($checked && in_array($value['data'], $checked) ){$output .= ' checked';}
+			$output .= '>';
+			$output .= '<label class="custom-control-label" for="pay_method'.$value['data'].'">'.$key.'</label>';
+			
+			$output .= '</div>';
+
+		}
+
+		
+		// Show a message on any products that do not allow monthly payments 
+		if($_GET['product'] == 'tl') 
+		{
+			$output .= '<p class="font-italic">This product only allows Annual payments.</p>';
+			
+		}
+
+		
+		return $output;
+	}
+	
+	public function set_link ($errors) 
+	{	
+		// Set error_details to null to clear the last function
+		$this->error_details = null;
+		
+		// Set a variable to be used throughout. This should match the name of the table column it is populating. 
+		$variable = 'set_link';
+		
+		// If the form has been posted (and therefore failed) set the value to re-populate with
+		$value = (null !== Input::get($variable)) ? Input::get($variable) :  '';
+		
+		/*
+			If there are errors for this input, use the set_errors() function to set the field and label classes, as well as the 
+			error text to show below the input.
+		*/ 
+		if(isset($errors[$variable])) 
+		{
+			$this->error_details = $this->set_errors($errors[$variable]); 
+		}
+		
+		// Start the label
+		$output = '<label for="' . $variable . ' " class="font-weight-bold ';
+		
+		// If there is a validation error, add the class to the label
+		$output .= $this->set_label_error();
+		
+		// End the label
+		$output .=  '">' . ucfirst($variable) . ' <span class="text-danger">*</span></label>';
+		
+		// Set the help stuff
+		$output .= helpBox (
+			array (
+				'title' => 'Set the test link ',
+				'content' => 'This is the test link that you want to run the batch against. Where appropriate, ensure you use /journey/new at the end',
+				//'placement' => 'right'
+			)
+		); 
+		
+		// Start the input
+		$output .= '<input type="text" class="form-control ' . $variable . ' mb-2 ';
+		
+		// If there is a validation error, add the class to the input
+		$output .= $this->set_input_error();
+		
+		// End the input
+		$output .=  '" name="' . $variable . '" placeholder="Enter the full link" value="'.$value.'">';
+		
+		// If there is a validation error, add the error text
+		$output .= $this->set_error_text();
+		
+		return $output;
+	}
+	
+	protected function people_details($errors)
+	{
+		$output = '<div class="row">';
+		
+		$output .= '<div class="col-12  col-md-5">';
+		$output .=  $this->policyholder ($errors);
+		$output .= '</div><!-- policyholder -->';
+		
+		
+		
+		$output .= '</div><!-- row -->';
+		
+		
+		return $output;
+	} // people_details ()
+	
+	private function ph_age ($errors) 
+	{	
+		// Set error_details to null to clear the last function
+		$this->error_details = null;
+		
+		// Set a variable to be used throughout. This should match the name of the table column it is populating. 
+		$variable = 'ph_age';
+		
+		// If the form has been posted (and therefore failed) set the value to re-populate with
+		$ph_min_age = (null !== Input::get('ph_min_age')) ? Input::get('ph_min_age') :  '50';
+		$ph_max_age = (null !== Input::get('ph_max_age')) ? Input::get('ph_max_age') :  '70';
+		
+		/*
+			If there are errors for this input, use the set_errors() function to set the field and label classes, as well as the 
+			error text to show below the input.
+		*/ 
+		if(isset($errors[$variable])) 
+		{
+			$this->error_details =$this->error_details =$this->error_details = $this->set_errors($errors[$variable]); 
+		}
+		
+		// Start the label
+		$output = '<label for="' . $variable . ' " class="font-weight-bold ';
+		
+		// If there is a validation error, add the class to the label
+		$output .= $this->set_label_error();
+		
+		// End the label
+		$output .=  '">' . ucfirst($variable) . ' <span class="text-danger">*</span></label>';
+		
+
+		// Set the help stuff
+		$output .= helpBox (
+			array (
+				'title' => 'Scenarios',
+				'content' => 'The number of scenarios that you want included. It is recommended to do a maximum of 50 at a time.',
+				'placement' => 'bottom'
+				//'placement' => 'right'
+			)
+		); 
+		// Start the input
+		$output .= '<div class="row">';
+		$output .= '<div class="input-group mb-3 col-6 col-md-12">';
+		$output .= '	<div class="input-group-prepend">';
+		$output .= '		<span class="input-group-text" id="basic-addon1">Min</span>';
+		$output .= '	</div><!-- input-group-prepend -->';
+		$output .= '	<input type="number" class="form-control numScenarios ';
+		
+		// If there is a validation error, add the class to the input
+		$output .= $this->set_input_error();
+		
+		// End the input
+		$output .=  '" name="ph_min_age" min="40" max="100" value="'.$ph_min_age.'">';
+		
+		$output .= '</div><!-- input-group -->';
+		
+		$output .= '<div class="input-group mb-3 col-6 col-md-12">';
+		$output .= '	<div class="input-group-prepend">';
+		$output .= '		<span class="input-group-text" id="basic-addon1">Min</span>';
+		$output .= '	</div><!-- input-group-prepend -->';
+		$output .= '	<input type="number" class="form-control numScenarios ';
+		
+		// If there is a validation error, add the class to the input
+		$output .= $this->set_input_error();
+		
+		// End the input
+		$output .=  '" name="ph_max_age" min="40" max="100" value="'.$ph_max_age.'">';
+		
+		$output .= '</div><!-- input-group -->';
+		$output .= '</div><!-- row -->';
+		$output .= $this->set_error_text();
+		return $output;
+	}
+	
+	private function policyholder ($errors) 
+	{	
+		$output = $this->ph_age($errors);
+		
+		return $output;
+
+	} // scenarios ()
+	
+	
+	
+	/* 
+		Set the errors 
+		
+		By simply passing in the required text to display under the input for invalid fields, this function 
+		will create an array including that and the required label and input classes. 
+	*/
+	private function set_errors($text) 
+	{
+		$data = array (
+			'label' => 'text-danger',
+			'input' => 'is-invalid',
+			'message' => $text,
+			
+		);
+		
+		return $data;
+	}
+	
+	/*
+		Sets the invalid class to a label
+	*/
+	private function set_label_error () 
+	{
+		if(isset($this->error_details)) 
+		{
+			return $this->error_details['label'];
+		}
+		else 
+		{
+			return '';
+		}
+	}
+	
+	/*
+		Sets the invalid class to a input
+	*/
+	private function set_input_error () 
+	{
+		if(isset($this->error_details)) 
+		{
+			return $this->error_details['input'];
+		}
+		else 
+		{
+			return '';
+		}
+	}
+	
+	/*
+		Sets the text to show below an invalid input 
+	*/
+	private function  set_error_text () 
+	{
+		if(isset($this->error_details)) 
+		{
+			return '<div class="invalid-feedback mb-2">' . $this->error_details['message'] . '</div><!-- invalid-feedback" -->';
+		}
+		else 
+		{
+			return '';
+		}
+	}
+
+}
+
+
+
+
+
+
+
+
+
+<?php
+/**
+ *	New form 
+ *
+ *	To Do's
+ *	JS to show session and post data
+ **/
+ini_set('display_errors','On');
+//echo '<pre>start';
+//print_r($_SESSION);
+//echo 'end</pre>';
+
+include('../config.php');
+
+$db = DB::dbConnect();
+$output = '';
+	$errors = null;
+ 
+if(!Input::exists('get'))
+{
+	Redirect::to('index.php');
+}
+
+if(!Input::get('product')) 
+{
+	Redirect::to('404');
+}
+
+if(!$db->get('products', array('short_name', '=', Input::get('product')))->count()) 
+{
+	Redirect::to('404');
+}
+
+$product = $db->get('products', array('short_name', '=', Input::get('product')));
+
+	
+if($_POST) {
+
+	$validate = new Validate ();
+
+	
+	$generate_class = $product->first()->prod_name . '_Generate';
+	$generate_class = new $generate_class();
+	nicePrint_r($generate_class -> validation_stuff());
+	$validation = $validate->check(
+		$_POST, 
+		$generate_class -> validation_stuff()
+	);
+
+	if($validation->passed()) {
+		$_SESSION['post_data'] = $_POST;
+		Redirect::to('generate.php?product=' . Input::get('product'));
+	} else {
+		$errors = $validation->errors();
+
+		$output .=  '<div class="alert alert-danger" role="alert">';
+		$output .=  '<h4 class="alert-heading">Batch not generated!</h4>';
+		$output .=  '<p class="font-italic">Please correct the following errors...</p>';
+		$output .=  '<ul>';
+		foreach ($validation->errors() as $error) {
+			$output .= '<li>' . $error . '</li>';
+		}
+		$output .=  '</ul>';
+		$output .=  '</div><!-- validation alert -->';
+	}
+	
+	
+}
+
+nicePrint_r($_POST);
+
+
+
+$form_class = $product->first()->prod_name . '_Form';
+$form_class = new $form_class();
+
+
+
+$output .= '<span class="text-danger">*</span><small><i> Denotes a required field</i></small>';
+ 
+ $output .= '<form action="" method="post">';
+ 
+$output .= '<div class="card text-dark bg-light mt-2">';
+$output .= '<div class="card-header"><h4 class="card-title mb-1">Basic Details</h4></div>';
+$output .= '<div class="card-body">';
+$output .= $form_class ->basics($errors);
+$output .= '</div>';
+$output .= '</div>';
+
+$output .= '<div class="card text-dark bg-light mt-2">';
+$output .= '<div class="card-header"><h4 class="card-title mb-1">People Details</h4></div>';
+$output .= '<div class="card-body">';
+$output .= $form_class ->people($errors);
+$output .= '</div>';
+$output .= '</div>';
+
+$output .= '<div class="col clearfix" >';
+$output .= '<button type="submit" name="submitButton" class="btn btn-sm btn-primary generate mt-2 float-right"> <strong> <span class="fa fa-download mr-1" aria-hidden="true"></span> Generate the script! </strong></button>';
+$output .= '</div>';
+$output .= '</form>';
+
+
+ $output .= '<hr>';
+
+
+include('../assets/classes/Core_Template.php');
+
+$template = new Core_Template (
+	array(
+		'content' => $output,
+		'version' => 'right-col',
+		'page_title' => $product->first()->prod_name . ' Form',
+		'page_subtitle' => 'Fill out all the required details for your ' . $product->first()->prod_name . ' scenarios....',
+		'include' => null
+	)
+
+ );
+ 
+?>
+<script>
+	$(function () {
+		$('[data-toggle="popover"]').popover()
+	})
+	
+	$(document).ready(function () {
+		 $('input[name=trans_type]').on('click', function () {
+			 var display = 'invisible';
+			 var nodisplay = 'visible';
+			 
+			  if($(this).val() == 'p') 
+			 {
+				 display = 'visible';
+				 nodisplay = 'invisible';
+			 }
+			 
+			$(' #payment-method').removeClass(nodisplay).addClass(display) ;
+				 
+		});	 
+		
+		$('input[name=test_or_live]').on('click', function () {
+			 var display = 'visible';
+			 var nodisplay = 'invisible';
+			 
+			  if($(this).val() == 'l') 
+			 {
+				 display = 'invisible';
+				 nodisplay = 'visible';
+			 }
+			 
+			$(' #set-link').removeClass(nodisplay).addClass(display) ;
+				 
+		});	 
+		
+	});
+	
+	
+</script>
 
 
 
@@ -1811,6 +1157,615 @@ class Validate {
 
 
 
+<?php
+include('Bootstrap.php');
+/**
+ * Main Template
+ *
+ * This file contains actual content of the page and buiilds the template
+ * using the functions in Base_Template.
+ *
+ * @package     Core
+ * @author      Steve Ball <steve@follyball.co.uk>
+ * @copyright     Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
+ * @example     new Main_Template($params)
+ * @return         Entire HTML page
+ */
+class Core_Template
+{
+        // To allow for multiple versions of the same template, we can pass in a version. Check content() in this Class to see how it is used
+        
+        /**
+         * Construct the Page
+         * @param string         $main       Page Content
+         * @param string         $version    Which version of the template to show
+         * @param string         $page_title The page title to send to the <head> and title
+         * @param array/null     $include    Additional css and js for the page
+         */
+        public function __construct($params)
+        {
+                // Set the displayed content to $this->content
+                $this->content = $params['content'];
+                
+                // Set any extra required css or js $this->include
+                $this->include = $params['include'];
+                
+                // If a Page Title has been passed set $this->page_title to it
+                // otherwise use 'Untitled'
+                if (isset($params['page_title'])) {
+                        $this->page_title = $params['page_title'];
+                } else {
+                        $this->page_title = 'Untitled';
+                }
+		
+		if (isset($params['page_subtitle'])) {
+                        $this->page_subtitle = $params['page_subtitle'];
+                } 
+                
+                /**
+                 * Set the layout version
+                 *
+                 * If a version has been passed set $this->version to it otherwise use 'default'
+                 *
+                 * There are currently five layout versions
+                 *         default
+                 *         full_width
+                 *         left-col
+                 *         right-col
+                 *         two-col
+                 *
+                 * In content() we call a different function depending on which version
+                 * has been requested.
+                 *
+                 * @var string
+                 */
+                if ($params['version']) {
+                        $this->version = $params['version'];
+                } else {
+                        $this->version = 'default';
+                }
+                
+                // Call the template function, including any extra required css or js
+                self::Template($params['include']);
+                
+        } // __construct
+        
+        
+        /**
+         * Build the entire template
+         *
+         * We build this up gradually via functions contained eihter in this file or in
+         * the Base_Template file it extends
+         * @return     HTML page
+         */
+        private function Template()
+        {
+                // Build the start of the page up to the opening body tag, including the <head>
+                $display = self::bodyStart();
+                
+                // Build banner
+                $display .= self::banner();
+                
+                // Build top navigation bar
+                $display .= self::topNav();
+                
+                // Build the container that holds the content and set the Page Title
+                $display .= self::contentStart();
+                
+                // Show the actual content for the page
+                $display .= self::content();
+                
+                // Close the container that holds the content
+                $display .= self::contentEnd();
+                
+                // Show the footer
+                $display .= self::footer();
+                
+                // Show any requested scripts and close of the <body> and <html> tags
+                $display .= self::bodyEnd();
+                
+                echo $display;
+        } // Template()
+        
+        /**
+         * Create the top banner
+         *
+         * @return string                     Banner
+         */
+        public function banner()
+        {
+                
+                $out = '<div class="container-fluid bg-info text-light pb-2">';
+                $out .= '<div class="container">';
+                $out .= '<h1>UAT Hub</h1>';
+                $out .= '</div>';
+                $out .= '</div>';
+                
+                // Echo out everything created in the function
+                echo $out;
+                
+        } // banner()
+        
+        /**
+         * Build the HTML down to the opening body tag and include extra css
+         *
+         * @return string                     Template to the opening <body> tag
+         */
+        public function bodyStart()
+        {
+                
+                // Start off by specifying the doctype
+                $out = ' <!doctype html>';
+                
+                // Open the html tag
+                $out .= '<html lang="en">';
+                
+                
+                /**
+                 * Include the <head> section
+                 *
+                 * If a page needs any extra css apart from the default, this will
+                 * have been specified using an $include array when calling new Main_Template.
+                 *
+                 * These will be set using their Globals::get() reference
+                 *
+                 * @var array/null
+                 */
+                $out .= self::head();
+                
+                // Open the body tag
+                $out .= '<body class="bdy">';
+                
+                // Echo out everything created in the function
+                echo $out;
+        } // bodyStart()
+        
+        /**
+         * Finish the HTML
+         *
+         * @return string                     Template for the end of the HTML
+         */
+        public function bodyEnd()
+        {
+                
+                /**
+                 * Include any extra js
+                 *
+                 * If a page needs any extra js apart from the default, this will
+                 * have been specified using an $include array when calling new Main_Template.
+                 *
+                 * These will be set using their Globals::get() reference
+                 *
+                 * @var array/null
+                 */
+                $out = self::scripts();
+                
+                // Close the body tag
+                $out .= '</body>';
+                
+                // Close the html tag
+                $out .= '</html>';
+                
+                // Echo out everything created in the function
+                echo $out;
+                
+        } // bodyEnd()
+        
+        /**
+         * Start the content
+         *
+         * @return string     Start of the content section up to the masthead
+         */
+        private function contentStart()
+        {
+                echo '<div class="container">';
+                echo '<div class="container masthead border border-1 border-top-0 border-left-0 border-right-0  border-secondary mb-2">';
+                
+                echo ' <h1 class="title">' . $this->page_title . '</h1>';
+		if(isset($this->page_subtitle)) 
+		{
+			 echo ' <p class="lead description">'.$this->page_subtitle.'</p>';
+		}
+               
+                echo ' </div>';
+        } // contentStart()
+        
+        /**
+         * End the content
+         *
+         * @return string     Closes the container
+         */
+        private function contentEnd()
+        {
+                echo '</div> <!-- container -->';
+        } // contentEnd()
+        
+        /**
+         * Show the actual page content
+         *
+         * We show the actual content of the page using a pre-defined layout version passed
+         * in when calling the template.
+         *
+         * Each layout is created using makeRow() and makeColumn() functions in the
+         * Bootstrap class.
+         *
+         * We start by making a row with an id of 'main_content'.
+         * Inside that we place an array ($inc) of each seperate column builder
+         * function we require.
+         *
+         * The available columns are
+         *     mainColumn_full ()        col-sm-12
+         *         Outputs $this->content
+         *
+         *     mainColumn ()            col-sm-9
+         *         Outputs $this->content
+         *
+         *     mainColumn_small()         col-sm-6
+         *         Outputs $this->content
+         *
+         *     left_Column()         col-sm-6
+         *         Outputs specified data
+         *
+         *     right_Column()         col-sm-6
+         *         Outputs specified data
+         *
+         * @return string      Page content
+         */
+        private function content()
+        {
+                
+                
+                // Check which version we are after
+                if ($this->version == 'full-width') {
+                        /*
+                        'full-width'
+                        
+                        Just a full width content column
+                        */
+                        echo Bootstrap::makeRow($id = 'main_content', $class = '', $inc = array(
+                                self::mainColumn_full()
+                        ));
+                        
+                } else if ($this->version == 'left-col') {
+                        /*
+                        'left-col'
+                        
+                        The left column and a standard content column
+                        */
+                        echo Bootstrap::makeRow($id = 'main_content', $class = '', $inc = array(
+                                self::left_Column(),
+                                self::mainColumn()
+                        ));
+                        
+                } else if ($this->version == 'right-col') {
+                        /*
+                        'right-col'
+                        
+                        The right column and a standard content column
+                        */
+                        echo Bootstrap::makeRow($id = 'main_content', $class = '', $inc = array(
+                                self::mainColumn(),
+                                self::right_Column()
+                        ));
+                        
+                } else if ($this->version == 'two-col') {
+                        /*
+                        'two-col'
+                        
+                        The left and right columns and a small content column
+                        */
+                        echo Bootstrap::makeRow($id = 'main_content', $class = '', $inc = array(
+                                self::left_Column(),
+                                self::mainColumn_small(),
+                                self::right_Column()
+                        ));
+                        
+                } else {
+                        echo Bootstrap::makeRow($id = 'main_content', $class = '', $inc = array(
+                                self::left_Column(),
+                                self::mainColumn()
+                        ));
+                }
+                
+        } // content()
+        
+        /**
+         * Build the <head> section
+         *
+         * Builds the entire <head> tag and includes any specified
+         * page specific css
+         *
+         * @return string                      <head> section
+         */
+        private function head()
+        {
+                $title = isset($this->page_title) ? $this->page_title : 'UAT Hub';
+                // Open the <head> tag
+                $out   = '<head>';
+                // Include the <meta> tags
+                $out .= ' <meta charset="utf-8">';
+                
+                // Include the <meta> tags
+                $out .= '<meta name="description" content="Admin Login">';
+                $out .= '<meta name="author" content="Steve Ball">';
+                $out .= '<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">';
+                $out .= '<meta name="description" content="Framework - Front End">';
+                $out .= '<meta name="keyword" content="Bootstrap,Admin,Template,PHP,MVC,Framework,jQuery,CSS,HTML,Dashboard">';
+                
+                // Set the Page Title
+                $out .= '<title>' . $title . '</title>';
+                
+                // Link the Favicon
+                $out .= '<link rel="shortcut icon" href="/favicon.ico">';
+                
+                // Call in the stylesheets
+                $out .= '<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-beta.3/css/bootstrap.min.css" integrity="sha384-Zug+QiDoJOrZ5t4lssLdxGhVrurbmBWopoEl+M6BdEfwnCJZtKxi1KgxUyJq13dy" crossorigin="anonymous">';
+                $out .= '<link href="https://maxcdn.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css" rel="stylesheet" integrity="sha384-wvfXpqpZZVQGK6TAh5PVlGOfQNHSoD2xbE+QkPxCAFlNEevoEH3Sl0sibVcOQVnN" crossorigin="anonymous">';
+                $out .= '<link rel="stylesheet" href="/includes/css/site.css">';
+                
+                // Include any page-specific css files
+                //$out .=  getIncludeFiles ($this->include, 'css');
+                
+                $out .= '<!--[if lt IE 9]>';
+                $out .= '   <script src="https://cdnjs.cloudflare.com/ajax/libs/html5shiv/3.7.3/html5shiv.js"></script>';
+                $out .= '  <![endif]-->';
+                $out .= '</head>';
+                
+                return $out;
+                
+        } // head()
+        
+        private function mainColumn()
+        {
+                return Bootstrap::makeColumn($id = 'main_content_inner', $class = 'col-sm-9', $inc = array(
+                        $this->content
+                ));
+        } // mainColumn ()
+        
+        // Content Column for full-width layout
+        private function mainColumn_full()
+        {
+                return Bootstrap::makeColumn($id = 'main3', $class = 'col-sm-12', $inc = array(
+                        $this->content
+                ));
+        } // mainColumn_full ()
+        
+        // Content Column for two-col layout
+        private function mainColumn_small()
+        {
+                return Bootstrap::makeColumn($id = 'main3', $class = 'col-sm-6', $inc = array(
+                        $this->content,
+                        $this->extra()
+                ));
+        } // mainColumn_small ()
+        /**
+         * Basic outputs for test
+         *
+         * These are just temporary functions to show something in the
+         * left and right columns.
+         *
+         * Both will be replaced with something more useful.
+         */
+        private function left_user()
+        {
+                
+                $out = '<div class="card menu">';
+                $out .= '  <div class="card-block">';
+                $out .= '   <h4 class="card-title">User Menu</h4>';
+                $out .= '  </div>';
+                
+                $out .= '<li class="list-group-item">Coming soon..</li>';
+		$out .= '  </div>';
+               
+                return $out;
+        }
+        
+        private function left_menu()
+        {
+                
+                $out = '        <div class="card menu">';
+                $out .= '  <div class="card-block">';
+                $out .= '   <h4 class="card-title">Batch Menu</h4>';
+                $out .= '  </div>';
+                $out .= '  <ul class="list-group list-group-flush">';
+                $out .= '   <li class="list-group-item"><a href="/Selenium/batches" class="card-link">Home</a></li>';
+                $out .= '    <li class="list-group-item">Dapibus ac facilisis in</li>';
+                $out .= '    <li class="list-group-item">Vestibulum at eros</li>';
+                $out .= ' </ul>';
+                $out .= ' <div class="card-block">';
+                $out .= '  <a href="#" class="card-link">Card link</a>';
+                $out .= '   <a href="#" class="card-link">Another link</a>';
+                $out .= ' </div>';
+                $out .= '</div>';
+                
+                return $out;
+        }
+        
+        
+        // Left Column for default, left-col and two-col layouts
+        private function left_Column()
+        {
+                return Bootstrap::makeColumn($id = 'left', $class = 'left-col col-sm-3', $inc = array(
+                        // Show the left_user() and left_menu() functions
+                        self::left_user(),
+                        self::left_menu()
+                ));
+        } // left_Column ()
+        
+        // Right Column for right-col and two-col layouts
+        private function right_Column()
+        {
+                return Bootstrap::makeColumn($id = 'left', $class = 'left-col col-sm-3', $inc = array(
+                        // Show the left_user() and left_menu() functions
+                        self::left_user(),
+                        self::left_menu()
+                ));
+        } // right_Column ()
+        
+        
+        /**
+         * Build the required scripts
+         *
+         * Builds the js and third party scripts
+         *
+         * @return string                      <head> section
+         */
+        private function scripts()
+        {
+                // Include any common js files
+                echo '<script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>';
+                echo '<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>';
+                echo '<script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-beta.3/js/bootstrap.min.js" integrity="sha384-a5N7Y/aK3qNeh15eJKGWxsqtnX/wWdSZSKp+81YjTmS15nvnvxKHuzaWwXHDli+4" crossorigin="anonymous"></script>';
+               // echo '<script src="/includes/js/default.js"></script>';
+                
+                // Include any page-specific js files
+                // getIncludeFiles ($this->include, 'js');
+                
+        } // scripts()
+        
+        /**
+         * Build the top navigation menu
+         *
+         * Sets the static parts of the menu and turns Globals::get('menus/main_top_nav')
+         * in the required links and dropdowns
+         *
+         * @return string     nav
+         */
+        public function topNav()
+        {
+                // Main Site Top Navigation Menu
+                $top_nav = array(
+                        'Home' => array(
+                                'link',
+                                '/'
+                        ),
+                        'Users' => array(
+                                'link',
+                                '/Users/'
+                        ),
+                        'Selenium' => array(
+                                'dropdown',
+                                array(
+                                        'Overview' => array(
+                                                'link',
+                                                '/Selenium/'
+                                        ),
+                                        'Batches' => array(
+                                                'link',
+                                                '/Selenium/Batches'
+                                        )
+                                )
+                        ),
+                        'Templates' => array(
+                                'link',
+                                '/Templates'
+                        )
+                );
+                
+                $out = '<nav class="navbar navbar-expand-lg navbar-dark bg-dark sticky-top">';
+                $out .= '    <div class="container">';
+                $out .= '        <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#main-nav" aria-controls="main-nav" aria-expanded="false" aria-label="Toggle navigation">';
+                $out .= '            <span class="navbar-toggler-icon"></span>';
+                $out .= '        </button>';
+                $out .= '      <div class="collapse navbar-collapse" id="main-nav">';
+                $out .= '          <ul class="navbar-nav mr-auto">';
+                
+                /**
+                 * Loop through the menu array and build the menu
+                 *
+                 * If the 'type' is set as 'link' we will create a simple <li><a>.
+                 * If the 'type' is set as 'dropdown' we will create a dropdown
+                 * <li><a> with a div containing all the links.
+                 * @var array
+                 */
+                foreach ($top_nav as $key => $value) {
+                        // 'type' is set as 'link'
+                        if ($value[0] == 'link') {
+                                /*
+                                Build a <li> with the class of .nav-item
+                                Inside this put an <a> with a value of $value[1] (the link)
+                                and a display of $key (the link name)
+                                */
+                                $out .= '<li class="nav-item">';
+                                $out .= '  <a class="nav-link" href="' . $value[1] . '">' . $key . '</a>';
+                                $out .= '</li>';
+                        }
+                        
+                        // 'type' is set as 'dropdown'
+                        if ($value[0] == 'dropdown') {
+                                /*
+                                Build a <li> with the class of .nav-item dropdown .
+                                
+                                Inside this, build an <a> with a class of dropdown-toggle. This
+                                will then use the Bootstap toggle class.
+                                Set the id to the $key (the link name) appended with '_menu'. This
+                                will be to target the correct dropdown menu. Also set the display to $key.
+                                
+                                Build a <div> with the class of .dropdown-menu. Give it an
+                                aria-labelledby of $key appended with '_menu' so it matches
+                                the <a> that triggers it.
+                                
+                                Finally, inside the div, loop through the links (stored in $value[1]) and creat an <a> for each one.
+                                */
+                                $out .= '<li class="nav-item dropdown">';
+                                $out .= '  <a class="nav-link dropdown-toggle" id="' . $key . '_menu" href="#" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">' . $key . '</a>';
+                                $out .= '  <div class="dropdown-menu" aria-labelledby="' . $key . '_menu">';
+                                
+                                foreach ($value[1] as $menu => $item) {
+                                        $out .= '  <a class="dropdown-item" href="' . $item[1] . '">' . $menu . '</a>';
+                                }
+                                
+                                $out .= '</div>';
+                                $out .= '</li>';
+                        }
+                }
+                
+                $out .= '          </ul><!-- #navbar-nav mr-auto -->';
+                $out .= '          <ul class="navbar-nav right">';
+                // Open a connection to the user function class
+                
+                
+                // If the user is not logged in or is not an admin, redirect them
+             /*   if ($_SESSION['userid'] > 5) {
+                        $out .= '<li class="nav-item dropdown">';
+                        $out .= '<a class="nav-link dropdown-toggle" id="Logged_in" href="#" data-toggle="dropdown" aria-haspopup="true" aria-expanded="true">Your settings</a>';
+                        $out .= '<div class="dropdown-menu dropdown-menu-right" aria-labelledby="Logged_in">';
+                        
+                        $out .= '<a class="dropdown-item" href="/Users/Profile"> Edit Profile </a>';
+                        
+                        $out .= '<a class="dropdown-item" href="?logout=true"> Logout </a>';
+                        $out .= '</div>';
+                        $out .= '</li>';
+                }
+                */
+                $out .= '          </ul><!-- #navbar-nav right -->';
+                $out .= '      </div><!-- #main-nav -->';
+                $out .= '    </div><!-- .container -->';
+                $out .= '</nav><!-- nav -->';
+                
+                echo $out;
+        } // topNav()
+        
+        /**
+         * Build footer
+         *
+         * Sets the page footer
+         *
+         * @return string     footer
+         */
+        public function footer()
+        {
+                
+                $out = '<footer class="footer  bg-dark">';
+                $out .= '    <div class="container">';
+                $out .= '        <span class="text-white">Place sticky footer content heres.</span>';
+                $out .= '    </div>';
+                $out .= '</footer> ';
+                
+                echo $out;
+        } // footer()
+        
+}
 
 
 
@@ -1819,6 +1774,125 @@ class Validate {
 
 
 
+<?php
+/**
+ *	New form 
+ *
+ *	To Do's
+ *	JS to show session and post data
+ **/
+ini_set('display_errors','On');
+//echo '<pre>start';
+//print_r($_SESSION);
+//echo 'end</pre>';
+
+include('../config.php');
+
+$db = new DB();
+ 
+if(!Input::exists('get'))
+{
+	Redirect::to('index.php');
+}
+
+if(!Input::get('product')) 
+{
+	Redirect::to('404');
+}
+
+if(!$db->get('products', array('short_name', '=', Input::get('product')))->count()) 
+{
+	Redirect::to('404');
+}
+
+$product = $db->get('products', array('short_name', '=', Input::get('product')));
+$generate_class = $product->first()->prod_name . '_Generate';
+$generate_class = new $generate_class();
+
+$output = '';
+
+
+nicePrint_r($generate_class-> set_basics_array () );
+
+
+nicePrint_r($_SESSION['post_data']);
+
+include('../assets/classes/Core_Template.php');
+
+$template = new Core_Template (
+	array(
+		'content' => $output,
+		'version' => 'right-col',
+		'page_title' => $product->first()->prod_name . ' Generate',
+		'page_subtitle' => 'Fill out all the required details for your ' . $product->first()->prod_name . ' scenarios....',
+		'include' => null
+	)
+
+ );
+ 
+?>
+
+
+
+
+
+
+
+
+
+<?php
+
+/**
+ * @package Core
+ * @author  Steve Ball <steve@follyball.co.uk>
+ * @copyright Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
+ *
+ */
+
+// Include the initiation file
+require_once '../config.php';
+
+class Pet_Generate Extends Shared_Generate {
+	
+	 public function __construct()
+	{
+	echo 'Generate';
+	} //__construct ()
+	
+	public function validation_stuff () 
+	{
+		$global_array = $this-> global_basics_validation (); 
+		
+		// Move title to global once there is something local to put here
+		$local_array = array (
+			'title' => array(
+				'required' => true,
+				'min' => 6
+			),
+		);
+		
+		if(Input::get('trans_type') == 'p' ) 
+		{
+			$local_array ['pay_method'] = array(
+				//'field_name' => 'Payment Method',
+				'required' => true,
+				'error_wording' => 'You must select a payment method for policies. This has been defaulted to Annual'
+			);
+		}
+		
+		if(Input::get('test_or_live') == 't' ) 
+		{
+			$local_array ['set_link'] = array(
+				//'field_name' => 'Payment Method',
+				'required' => true
+			);
+		}
+		
+		return array_merge($global_array,$local_array);
+
+	}	
+
+}
 
 
 
