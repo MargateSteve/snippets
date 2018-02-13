@@ -1,0 +1,2519 @@
+<?php
+
+/**
+ * Logs class
+ *
+ *
+ * @package Core
+ * @author  Steve Ball <steve@follyball.co.uk>
+ * @copyright Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
+ *
+ */
+
+// Include the inititisation file
+require_once 'app/init.php';
+
+class Logs
+{
+	// Set any private variables
+    private static $_instance = null,$db ;
+    private $_pdo,
+            $_query,
+            $_error = false,
+            $_results,
+            $_count = 0;
+
+	/**
+	 * Construct the database connection
+	 *
+	 *	Opens up a connection to the database and assigns it to
+	 *	$this->_pdo to make it re-usable.
+	 *
+	 * The connection parameters are called using Globals on values held
+	 * in /app/core/config_files/db.php
+	 *
+	 * @return 	Database connection
+	 */
+    private function __construct()
+	{
+        $db = DB::dbConnect();
+
+    } //__construct ()
+
+    private static function insert_activity ($params) {
+
+        $db = DB::dbConnect();
+        $db->insert(
+            'activity',
+            $params
+        );
+
+        return $db::insertIDs();
+    }
+
+    private static function insert_failed_login ($data) {
+
+        $db = DB::dbConnect();
+        $db->insert(
+            'failed_logins',
+            $data
+        );
+    }
+
+
+    public static function login_fail ($data) {
+        $params['type'] = 4;
+        $params['user'] = 0;
+        $params['area'] = '0';
+        $params['stamp'] = date('Y-m-d H:i:s');
+        $params['reason'] = date('Y-m-d H:i:s');
+
+        $id = self::insert_activity ($params);
+
+        $db = DB::dbConnect();
+        $data['ref'] = $id;
+
+        self::insert_failed_login ($data);
+    }
+
+    public static function login_success () {
+        $params['type'] = 4;
+        $params['user'] = Session::get(Settings::members()['login_session']);
+        $params['area'] = '0';
+        $params['stamp'] = date('Y-m-d H:i:s');
+
+        self::insert_activity ($params);
+    }
+
+    public static function logout_success () {
+        $params['type'] = 5;
+        $params['user'] = Session::get(Settings::members()['login_session']);
+        $params['area'] = '0';
+        $params['stamp'] = date('Y-m-d H:i:s');
+
+        self::insert_activity ($params);
+    }
+
+}
+
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+<?php
+
+/**
+ * Database class
+ *
+ * Controls all database CRUD functions as well as opening up an instance
+ * of this class.
+ *
+ * @package Core
+ * @author  Steve Ball <steve@follyball.co.uk>
+ * @copyright Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
+ *
+ */
+
+// Include the inititisation file
+require_once 'app/init.php';
+
+class DB
+{
+	// Set any private variables
+    private static $_instance = null;
+    private $_pdo,
+            $_query,
+            $_error = false,
+            $_results,
+            $_count = 0;
+
+	/**
+	 * Construct the database connection
+	 *
+	 *	Opens up a connection to the database and assigns it to
+	 *	$this->_pdo to make it re-usable.
+	 *
+	 * The connection parameters are called using Globals on values held
+	 * in /app/core/config_files/db.php
+	 *
+	 * @return 	Database connection
+	 */
+    private function __construct()
+	{
+        $db = Settings::db();
+
+        try
+		{
+            $this->_pdo = new PDO('mysql:host=' . $db['host'] . ';dbname=' . $db['dbname'],  $db['username'], $db['password']);
+
+        } catch(PDOException $e) {
+            die($e->getMessage());
+        }
+    } //__construct ()
+
+	/**
+	 * Create a new Database instance
+	 *
+	 * Creates a new instance of the database class that can be assigned to a
+	 * variable and re-used.
+	 *
+	 * @return Database connection
+	 * @example $this->db = DB::dbConnect();
+	 */
+    public static function dbConnect()
+	{
+		// If an instance has not already been set, set it
+        if(!isset(self::$_instance)) {
+            self::$_instance = new DB();
+        }
+		// Return the instance
+        return self::$_instance;
+    } // dbConnect()
+
+	/**
+	 * Perform a query on an SQL statement
+	 *
+	 * All of the variables created are private so cannot be called
+	 * externally, but each has it's own public function.
+	 *
+	 * If you are using parameters, you need to replace the position where
+	 * their values would be with ?
+	 *
+	 * self::db()->query("SELECT * FROM user_hash WHERE email = ? AND hash = ?", array($email, $hash));
+	 *
+	 * @param  string 	$sql    SQL statement
+	 * @param  array  	$params Paremeters to add to the string
+	 * @return array         	Query results, errors and count
+	 */
+    public function query ($sql, $params = array())
+	{
+
+		// Set error to false by default
+        $this->error = false;
+
+		/*
+			We attempt to prepare the query and if it is succesful,
+			we bind the parameters and execute it.
+		 */
+        if ($this->_query = $this->_pdo->prepare($sql))
+		{
+			/*
+				The query is prepared so we have to check to see if
+				there are any parameters.
+
+				If there are we loop through them annd then bind them
+				to the query
+			 */
+
+			// Set the counter to one
+            $x = 1;
+
+			// Check to see if there are any parameters
+            if(count($params))
+			{
+				/*
+					There are parameters so we loop through them and
+					bind each
+				 */
+                foreach($params as $param) {
+					// Bind the parameter with it's counter position
+                    $this->_query->bindValue($x, $param);
+
+					// Increment the counter
+                    $x++;
+                }
+            }
+
+
+			/*
+				Now that the parameters have been bound, we try to execute
+				the query.
+				If succesful we set the results and row count, otherwise we
+				set the error.
+			 */
+            if($this->_query->execute())
+			{
+				// The query executed succesfully so set the results and count
+                $this->_results = $this->_query->fetchAll(PDO::FETCH_OBJ);
+                $this->_count = $this->_query->rowCount();
+            } else
+			{
+				// The query failed so set error to true
+                $this->_error = true;
+            }
+        } // prepare
+
+		// Return anything that has been set as a result of the wquery attempt
+        return $this;
+
+    } // query ()
+
+
+	/**
+	 * Perfom a simple action on a table
+	 *
+	 * Allows you to perform a quick SELECT or DELETE on a table when
+	 * only one parameter needs to be set.
+	 *
+	 * @param  string $action SELECT/DELETE
+	 * @param  string $table  The name of the table
+	 * @param  array  $where  An array of parameters - field, operator, value
+	 * @return array          The output from the query() function in this class
+	 */
+    public function action ($action, $table, $where = array())
+	{
+		/*
+			A $where array MUST contain exactly three paramenters for this to
+			work so the first thing to do is check that.
+
+		 */
+        if (count($where) === 3)
+		{
+			// There are three parameters so set the available operators
+            $operators = array('=', '>', '<', '>=', '<=');
+
+			/*
+				As the $where array is set as field, operator, value we can easily set them to named variables
+			 */
+            $field = $where[0];
+            $operator = $where[1];
+            $value = $where[2];
+
+			/*
+				The next check is to make sure that the supplied operator is
+				one of the ones set in $operators
+			 */
+            if (in_array($operator, $operators))
+			{
+				// The operator matches so create the SQL statement
+                $sql = "{$action} FROM {$table} WHERE {$field} {$operator} ?";
+
+				// Try to execute the query using the query() function.
+                if(!$this->query($sql, array($value))->error()) {
+
+					// Return anything returned from the query
+                    return $this;
+                }
+            } // Operator check
+        }// count check
+
+        return false;
+    } // action ()
+
+	/**
+	 * Perform a quick select on a table
+	 *
+	 * @param  	string 	$table 	Table name
+	 * @param  	array  $where  An array of parameters - field, operator, value
+	 * @return 	Query results
+	 * @example get('users', array('joined', '>', '2017-01-01'))
+	 */
+    public function get ($table, $where)
+	{
+        return $this->action('SELECT *', $table, $where);
+    } // get ()
+
+	/**
+	 * Perform a quick delete on a table
+	 *
+	 * @param  	string 	$table 	Table name
+	 * @param  	array  $where  An array of parameters - field, operator, value
+	 * @return 	Query results
+	 * @example delete('users', array('joined', '>', '2017-01-01'))
+	 */
+    public function delete ($table, $where)
+	{
+        return $this->action('DELETE', $table, $where);
+    } // delete ()
+
+
+	/**
+	 * Insert a row into a table
+	 *
+	 * @param  	string 	$table 	Table name
+	 * @param  	array  	$fields An array of table fields and values
+	 * @return 	Query results
+	 * @example insert('users', array('username' => 'SteveB', 'active' => '1'))
+	 */
+    public function insert ($table, $fields = array())
+	{
+		/*
+			The $fields array will have a $key => $value pairing for
+			each field having data inserted. The $key will matche the
+			table field name and the $value will be the value to insert.
+
+			We use array_keys extract the keys from the $fields array
+			and assigned them to $keys.
+		 */
+        $keys = array_keys($fields);
+
+		// Create a default $values variable
+        $values = '';
+
+		// Set the counter to 1
+        $x = 1;
+
+		/*
+			Loop through the fields and for each one, create a ? to
+			place in the fields section of the insert statement
+		 */
+        foreach($fields as $field)
+		{
+			// Add a placeholder to $values
+            $values .= '?';
+
+			// If we are not on the last pairing, add a comma to $values
+            if ($x < count($fields))
+			{
+                $values .= ', ';
+            }
+
+			// Increment the counter
+            $x++;
+        } // foreach
+
+		/*
+			We now have all the information to build the SQL statement by
+			inserting the passed table as well as the fields and values.
+
+			Using the example at the top of this function, the statement would be
+			INSERT INTO `users` (`username`, `active`) VALUES (?, ?)
+
+			We then pass the statement into the query() function
+		 */
+        $sql = "INSERT INTO `{$table}` (`" . implode('`,`', $keys) . "`) VALUES ({$values})";
+echo $sql;     nicePrint_r($fields);
+		// Try to execute the query using the query() function.
+        if (!$this->query($sql,$fields)->error())
+		{
+			// Return anything returned from the query
+			return true;
+        }
+
+        return false;
+
+    } // insert()
+
+
+	/**
+	 * Update a row in a table
+	 *
+	 * @param  	string 	$table 	Table name
+	 * @param   int 	$id     The id of the row to update
+	 * @param  	array  	$fields An array of table fields and values
+	 * @return 	Query results
+	 * @example update('users', 1, array('username' => 'SteveBNew', 'active' => '0'))
+	 */
+    public function update ($table, $id, $fields = array())
+	{
+		// Create a default $set variable to hold the values and fields
+        $set = '';
+
+		// Set the counter to 1
+        $x = 1;
+
+		/*
+			Loop through the fields and for each one, create an x=? to
+			place in the values section of the update statement
+		 */
+        foreach ($fields as $name => $value)
+		{
+			// Add a field = ?
+            $set .= "`{$name}` = ?";
+
+			// If we are not on the last pairing, add a comma to $set
+            if ($x < count($fields)) {
+                $set .= ', ';
+            }
+
+			// Increment the counter
+            $x++;
+        } // foreach
+
+
+		/*
+			We now have all the information to build the SQL statement by
+			inserting the passed table as well as the values in $set.
+
+			Using the example at the top of this function, the statement would be
+			UPDATE `users` SET `username`='SteveBNew',`active`='0' WHERE id=1
+
+			We then pass the statement into the query() function
+		 */
+        $sql = "UPDATE `{$table}` SET {$set} WHERE id = {$id}";
+
+		// Try to execute the query using the query() function.
+        if (!$this->query($sql,$fields)->error())
+		{
+			// Return anything returned from the query
+			return true;
+        }
+
+        return false;
+
+    } // update ()
+
+	//////////////////////////////////////////////////
+	// Public functions to call private variables  //
+	//////////////////////////////////////////////////
+
+	// Allow a single row of results data to be called publically
+    public function first ()
+	{
+        return $this->results()[0];
+    }
+
+	// Allow a results set data to be called publically
+    public function results ()
+	{
+        return $this->_results;
+    }
+
+	// Return a row count
+    public function count ()
+	{
+        return $this->_count;
+    }
+
+	// Return an error
+    public function error ()
+	{
+        return $this->_error;
+    }
+
+    public function insertID ()
+	{
+        return $this->_pdo->lastInsertId();
+    }
+
+    public static function insertIDs ()
+	{
+        return $this->_pdo::lastInsertId();
+    }
+}
+
+
+
+
+
+
+
+
+
+----------------------------------------------------------------------------------------------------------------------------
+
+
+
+<?php
+
+/**
+ *  Users Model
+ *
+ *  Contains the standard functions for data
+ *  manipulation, as well as the CRUD forms and displays.
+ *
+ *  Note that Users have a lot more functionality than mosts sections so there is a lot more to this one than most
+ *  models will contain.
+ *
+ *  @package Core
+ *  @author  Steve Ball <steve@follyball.co.uk>
+ *  @copyright Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
+ */
+
+// Include the initiation file
+if(file_exists('../app/init.php')) {
+    require_once '../app/init.php';
+} else {
+     require_once 'app/init.php';
+}
+
+class M_Users
+{
+    private
+        $_data,
+        $_db_table = 'users',
+        $_field,
+        $_field_data,
+        $_form_data,
+        $_form_fields,
+        $_params,
+        $_record,
+        $_qry;
+
+    /**
+     * Connect to the database
+     *
+     * Returns an instance of the database connection to be used
+     * within the class. This is set as a function as it also needs
+     * to be accessed by the model.
+     *
+     * @return  Database connection
+     */
+    protected function db() {
+        return  DB::dbConnect();
+    } // db()
+
+    /**
+     * Get the total number of records
+     *
+     * @return int 	    Count of rows
+     */
+    public function count() {
+        // Select all records from the database
+        $_qry  =  $this->db()->query('SELECT * FROM '.$this->_db_table);
+
+        // Return a count of the records returned
+        return $_qry->count();
+    } // count()
+
+    /**
+	 *	Change a users password
+	 *
+	 *	Creates a new salt and hashed password and updates a users
+	 *	record with them.
+	 *
+	 *	@params 	int		$user		User ID
+	 **/
+	public function changePassword ($user)
+    	{
+		// We always use validation as an object so we do this for constency
+		$_validate = (object)array();
+
+		// Place the $_POST data into a variable that will get manipulated.
+		$_postdata = $_POST;
+
+		/*
+			The forms all have .req-token to prevent double-posting on page
+			refresh. This generates a new $_SESSSION['token'] value and also
+			adds a hidden form element containing the $_SESSSION['token'].
+
+			We need to check that the posted token matches the current $_SESSSION['token']
+			and only proceed if it does.
+		 */
+		if(!Token::check(Input::get('token')))
+    		{
+    			// The token check failed so set the errors to 'token'
+    			$_validate->error = 'token';
+
+    		}
+    		else
+    		{
+			/*
+				The token check is succesful, so we again unset that from the $_postdata array, along with the
+				submit button, to ensure we only have insert data left.
+			*/
+			unset($_postdata->token);
+			unset($_postdata->reset_password_submit);
+
+			/*
+				We now attempt to validate the contents of $_postdata.
+
+				The validation for this form is passed directly into Form_Functions::postValidate(), along with the $_postdata and
+				this checks each field in $_postdata against it's relevant validation if it exists.
+
+				The function returns a boolean 'status' as to  whether validation was passed. If validation failed, it will also contain any
+				validation errors that have been generated.
+			 */
+			$_validate = Form_Functions::postValidate($_postdata,
+			array (
+			    'password' => [
+					'validation' => [
+					    'required' => true,
+					    'min' => 6
+					],
+				],
+			    'confirm_password' => array(
+				'type' => 'password',
+				'error' => 'You must enter a confirmation password that matches the password',
+				'validation' => array(
+				    'required' => true,
+				    'matches' => 'password'
+				),
+			    ))
+			);
+
+			if($_validate->status)
+			{
+				// Create a new salt
+				$salt = Hash::salt(32);
+
+				/*
+					The original $_postdata -> password cannot be entered as it is a raw string of readable data.
+
+					We replace this with a hashed password, generated using the salt we just created and also create
+					a new element in $_postdata with the salt as when logging in, we will need the updated salt to match
+					the stored, hashed, password.
+				*/
+				$_postdata = array(
+				'password' => Hash::make(Input::get('password'), $salt),
+				'salt' => $salt
+				);
+
+				// Now we have the correct $_postdata so use quickUpdate() to process it.
+				$this->quickUpdate($user, $_postdata);
+			}
+		}
+
+		// Return any errors
+		return (isset($_validate->error)) ? $_validate->error : false ;
+    	} // changePassword()
+
+
+    /**
+     * Check the user cookie
+     * @param string $hash The hash value stored in gthe login cookie table
+     */
+    public function checkCookie() {
+        if (Cookie::exists(Settings::members()['user_cookie'])) {
+            // Check to see if this user already has a login hash - if so, something is wrong with logouts
+            $hashCheck = $this->db()->get('login_cookie', array('hash', '=', Cookie::get(Settings::members()['user_cookie'])));
+
+            // As long as there is no existing record, add one to the login_cookie table
+            if ($hashCheck->count()) {
+                if ($this->find($hashCheck->first()->user_id)) {
+                    Session::put(Settings::members()['login_session'], $this->data()->id);
+                    Session::put(Settings::members()['user_login_group'], $this->data()->group);
+                }
+
+            } else {
+                Cookie::delete(Settings::members()['user_cookie']);
+            }
+        }
+
+    } // setUserCookie()
+
+    /**
+	 * Check the user hash
+	 *
+	 * Checks an email/hash combination for a matching
+	 * value in the user_hash table, returning the count
+	 *
+	 * @param  email 	$email 	Users Email address
+	 * @param  sha256 	$hash  	Stored hash
+	 * @return int        		Count of returned results
+	 * @example /controllers/users/home->verify()
+	 *
+	 */
+	public function checkUserHash ($email, $hash) {
+        if(self::db()->query("SELECT * FROM user_hash WHERE email = ? AND hash = ?", array($email, $hash))->count()) {
+            return true;
+        }
+        return false;
+    } // checkUserHash()
+
+    /**
+	 * Create a new record
+	 *
+	 * Collects post data, validates it and inserts it into the database
+	 *
+	 */
+	public function create ($_params=[]) {
+        $_params['salt'] = Hash::salt(32);
+        $_params['password'] = Hash::make(Input::get('password'), $_params['salt']);
+        $_params['joined'] = date('Y-m-d H:i:s');
+
+        if (!self::db()->insert($this->_db_table, $_params)){
+			// The insert was unsuccesful
+			throw new Exception('There was a problem creating an account!');
+
+			// Flash a generic error message
+			$this->crudFlash ('generic_error');
+
+			return false;
+		}
+
+        return true;
+
+	} // create()
+
+    /**
+   	 * Creates a record in the user_hash table
+   	 *
+   	 * Whenever a user has to verify by email, the link they are
+   	 * sent will contain their email address and a hash string that
+   	 * matches a row in the user_hash table.
+   	 *
+   	 * This is to ensure a valid request has been used.
+   	 *
+   	 * @param  array 	$_fields 	Email and Hash
+   	 */
+    public function createUserHash($_fields) {
+        $_fields['stamp'] = Settings::current_datetime()->format('Y-m-d H:i:s');
+        if (!self::db()->insert('user_hash', $_fields)) {
+            throw new Exception('There was a problem creating a user hash!');
+        }
+    } // createUserHash()
+
+    /**
+     * Return a records data
+     *
+     * Returns the private $this->_data details
+     * array in a public function
+     *
+     * @return array 	Record data
+     *
+    **/
+    public function data() {
+        return $this->_data;
+    } // data()
+
+    /**
+         * Delete a record
+         *
+         *  Deletes the specified record from $this->crud_table()->name
+         *
+         * @param  int  $record  Record ID
+         */
+	public function delete ($record) {
+		// We do not have to unset, add or amend anything so purely run the delete
+			if(!self::db()->delete($this->_db_table, array('id', '=', $record)))
+			{
+				// The update was unsuccesful
+				throw new Exception('There was a problem updating the account!');
+				// Flash a generic error message
+				$this->crudFlash ('generic_error');
+
+				return false;
+			}
+
+            return true;
+
+	} // delete()
+
+
+    /**
+     * Delete the user cookie
+     *
+     * As well as deleting the cookie, this also removes the
+     * record from then login_cookie table
+     *
+     * @param  int 	$user 	User ID
+     */
+    public function deleteCookie() {
+        $hashCheck = $this->db()->delete('login_cookie', array('hash', '=', Cookie::get(Settings::members()['user_cookie'])));
+        Cookie::delete(Settings::members()['user_cookie']);
+    } // deleteUserCookie()
+
+    public function deleteForm () {
+
+
+        $content = '';
+
+
+        $bottom_row = Php2Bs::bs_form_group ([
+            'class' => '',
+            'content' => Php2Bs::bs_button ([
+                'button_type' => 'submit',
+                'color' => 'danger',
+                'size' => 'sm',
+                'class' => 'float-right',
+                'content' => 'Delete',
+                'name' => 'delete_user'
+            ])
+        ]); // $bottom_row
+
+        // Wrap whatever we have in $bottom_row in a form row
+        $content .= Php2Bs::bs_form_row ([
+            'content' => $bottom_row,
+        ]); // Php2Bs::bs_form_row
+
+
+        // Compile the form
+        return Php2Html::form([
+            'id' => '',
+            'action' => '',
+            'method' => 'post',
+            'class' => 'req-token',
+            'content' => $content
+        ]); //  Php2Html::form
+
+        return $content;
+    } // userForm
+
+    /**
+     * Delete user hash
+     *
+     *  Deletes the
+     *
+     * @param  int  $record  Record ID
+     */
+    public function deleteUserHash ($_hash) {
+        if(!self::db ()->delete('user_hash', array('hash', '=', $_hash)))
+        {
+            throw new Exception('There was a problem updating the account!');
+            $this->crudFlash ('generic_error');
+
+            return false;
+        }
+    } // delete ()
+
+    /**
+     *  Check if a record exists
+     *
+     *	Checks to see if $this->data() exists following a find()
+     *
+     **/
+    public function exists() {
+      return ($this->data()) ? true : false;
+    } // exists()
+
+    /**
+     * Find a record
+     *
+     * Finds a record and assigns it's details from the $this->_db_table
+     * table to $this->_data. This can then be accessed from other files
+     * using data().
+     *
+     *
+     * @param  string/email/int 	$group  	Group identifier
+     * @return Boolean/Array
+     */
+    public function find($_record=null) {
+
+        // We only run this if a record has been passed in so check for it
+        if ($_record)
+        {
+            /*
+                A record has been passed in so we now need to check what parameter has
+                been used to determine which field we are going to check it against in the table.
+
+                For Users, the $_record will either be the id or the username so we do not have
+                to manipulate it at all. There will be some occasions where we have to tweak
+                $_record to suit what is stored in the database compared to what we can use in a url. Ideally in these situations, we would use a slug.
+
+                If $_record is a number, we will assume it is the id field as usernames must start with a letter, otherwise it must be the username.
+
+             */
+            if(is_numeric($_record) && (int) $_record == $_record)
+            {
+                // $_record is numeric so we need to look up the id field
+                $_field = 'id';
+            } else
+            {
+                // $_record is not numeric so we need to look up the username or email field depending on the data posted
+                $_field = (filter_var($_record, FILTER_VALIDATE_EMAIL)) ? 'email' :   'username';
+            }
+
+            // Search the table for the passed in $_record and correct $_field
+            $data = self::db()->get($this->_db_table, array($_field, '=', $_record));
+
+            // If the query returns any rows, set the data to $this->_data and return true
+            if ($data->count()) {
+                $this->_data = $data->first();
+                return true;
+            }
+        }
+        return false;
+    } // find()
+
+    /**
+	 * Check if a remember me cookie exists
+	 * @return boolean Cookie existence
+	 */
+	public function hasCookie() {
+        return (Cookie::exists(Settings::members()['user_cookie'])) ? true : false ;
+    } // hasUserCookie()
+
+    /**
+     * Check a user has the required permission
+     *
+     *	Each user group can have multiple permissions and these
+     *	are stored as json.
+     *
+     * 	If a groups permissions we as follows {"super_admin":0, "admin": 1,"mod":1}
+     *
+     *     hasPermission('super_admin') would return false
+     *     hasPermission('admin') would return true
+     *     hasPermission('mod') would return true
+     *
+     *   @param  string  $key The permission name
+     *   @return boolean      Permission status
+     *   @example hasPermission('admin')
+     */
+    public function hasPermission ($key) {
+        // Get the user group details for the current user
+        $usergroup = self::db()->get(
+            'user_groups',
+            array(
+                'id', '=', Session::get(Settings::members()['user_login_group'])
+            )
+        );
+
+        // As long as the user group is set, check if that group has the requested permission
+        if($usergroup->count())
+        {
+            // Set the permissions of the users group to $permissions array
+            $permissions = json_decode($usergroup->first()->permissions, true);
+
+            // Check if the requested permission exists in the array
+            if ($permissions[$key] == true)
+            {
+                // The permission exists so return true
+                return true;
+            }
+        }
+        return false;
+    } // hasPermission()
+
+    /**
+	 * Check if a user is logged in
+	 * @return boolean Login Status
+	 */
+	public function isLoggedIn() {
+		return (Session::exists(Settings::members()['login_session'])) ? true : false ;
+	} // isLoggedIn()
+
+    /**
+         * Return a list of Records
+         *
+         * @return array  List of Records
+         */
+    public function listing() {
+        // Select all records from the database
+        $list = self::db()->query('SELECT
+        *
+        FROM `' . $this->_db_table . '`'
+        );
+
+        // Return the results as an array
+        return $list->results();
+    } // listing()
+
+    /**
+     * Show the login form
+     *
+     * Displays the login form
+     *
+     * @return 	string 	Login Form
+     * @example /app/core/Templates/Main_Template->left_user()
+     */
+    public function loginForm($_form_data=[]){
+        /**
+         * Set the output variable
+         *
+         * The final output will be built as a variable called
+         * $text so create it ready to add to
+         *
+         * @var null
+         */
+        $text = '';
+
+        $content = '';
+
+        $content .= Php2Bs::bs_input_group ([
+            'group' => [
+                'class' => 'mb-3'
+            ],
+
+            'prepend' => [
+                'content' => '<i class="fas fa-user fa-sm"></i>',
+                'id' => 'username_field'
+            ],
+
+            'input' => [
+                //'class' => 'bg-info',
+                'type' => 'text',
+                'id' => 'Username',
+                'name' => 'username',
+                'placeholder' => 'Username, email or id',
+                'aria' => [
+                    'label' => 'Username',
+                    'describedby' => 'username_field',
+                ]
+            ],
+
+        ]); // Php2Html::div.form-group
+
+
+        $content .= Php2Bs::bs_input_group ([
+            'group' => [
+                'class' => 'mb-3'
+            ],
+
+            'prepend' => [
+                'content' => '<i class="fas fa-key fa-sm"></i>',
+                'id' => 'password_field'
+            ],
+
+            'input' => [
+                //'class' => 'bg-info',
+                'type' => 'password',
+                'id' => 'Password',
+                'name' => 'password',
+                'placeholder' => 'Password',
+                'aria' => [
+                    'label' => 'Password',
+                    'describedby' => 'password_field',
+                ]
+            ],
+
+        ]); // Php2Html::div.form-group
+
+
+
+        $content .= Php2Html::div ([
+            'class' => 'form-check',
+            'content' => Php2Html::checkbox ([
+                'id' => 'Remember',
+                'name' => 'remember',
+                'class' => 'form-check-input',
+            ]) // checkbox
+			.Php2Html::label ([
+                'for' => 'Remember',
+                'content' => 'Remember Login?',
+                'class' => 'mb-0',
+            ]) // label
+        ]); // Php2Html::div.form-group
+
+		if(!isset($_form_data['admin']) && !isset($_form_data['hide_help']))
+        {
+            $content .= Php2Html::a ([
+                'content' => 'Login Help',
+                'href' => '/Login/'
+            ]);
+        }
+
+        $content .= Php2Html::button ([
+            'button_type' => 'submit',
+            'class' => 'btn btn-primary btn-sm float-right',
+            'content' => 'Login',
+            'name' => 'login'
+        ]);
+
+        $text .= Php2Html::form([
+            'id' => '',
+            'action' => '',
+            'method' => 'post',
+            'class' => 'req-token',
+            'content' => $content
+        ]);
+
+        // Return the output
+        return $text;
+    } // loginForm()
+
+    /**
+     * Show the login form
+     *
+     * Displays the login form
+     *
+     * @return 	string 	Login Form
+     * @example /app/core/Templates/Main_Template->left_user()
+     */
+    public function logoutForm() {
+        /**
+         * Set the output variable
+         *
+         * The final output will be built as a variable called
+         * $text so create it ready to add to
+         *
+         * @var null
+         */
+        $text = '';
+
+        $content = '';
+
+        $content .= Php2Html::button ([
+            'button_type' => 'submit',
+            'class' => 'btn btn-primary btn-block btn-sm',
+            'content' => 'Logout',
+            'name' => 'logout'
+        ]);
+
+        $text .= Php2Html::form([
+            'id' => '',
+            'action' => '',
+            'method' => 'post',
+            'class' => 'req-token',
+            'content' => $content
+        ]);
+
+        // Return the output
+        return $text;
+    } // loginForm()
+
+    public function messages () {
+        return [
+            'admin_not_found' => [
+                'title' => 'User not found',
+                'content' => 'The User could not be found. '
+                . Php2Html::a(['content' => 'View List', 'href'=>'/Admin/Users/Listing']),
+                'alert_color' => 'info',
+                'dismissible' => false,
+            ],
+            'not_found' => [
+                'title' => 'User not found',
+                'content' => 'The User could not be found. ',
+                'alert_color' => 'info',
+                'dismissible' => false,
+            ],
+            'not_logged_in' => [
+                'title' => 'Not logged in',
+                'content' => 'You must be logged in to view this page.',
+                'alert_color' => 'warning',
+                'dismissible' => false,
+            ],
+            'login_empty_fields' => [
+                'title' => 'Login failed',
+                'content' => 'Both fields must be filled in.',
+                'alert_color' => 'danger',
+            ],
+            'login_not_found' => [
+                'title' => 'Login failed',
+                'content' => 'The user was not found.',
+                'alert_color' => 'info',
+            ],
+            'login_not_pw' => [
+                'title' => 'Login failed',
+                'content' => 'The password was incorrect.',
+                'alert_color' => 'info',
+            ],
+            'login_unverified' => [
+                'title' => 'Login failed',
+                'content' => 'You cannot login as you have not verified your account. Please check your email for the verification link.',
+                'alert_color' => 'info',
+            ],
+            'login_banned' => [
+                'title' => 'Login failed',
+                'content' => 'You cannot login as you are banned.',
+                'alert_color' => 'info',
+            ],
+            'send_link_fail' => [
+                'title' => 'Link not sent',
+                'alert_color' => 'danger',
+                'content' => 'Please enter something to search for.'
+            ],
+            'pw_email_sent' => [
+                'title' => 'Email sent',
+                'alert_color' => 'success',
+                'content' => [
+                    'The email has been sent to the account matching the details. Please click on the link in it to reset your password.',
+                    ' If you do do receive it, check your spam or junk folders. Otherwise, <a class="alert-link" href="/Members/ResetPassword">try again</a>..']
+            ],
+            'hash_fail' => [
+                'title' => 'Incorrect Parameters',
+                'alert_color' => 'warning',
+                'content' => 'We could not recognise the details. Please use the link from the email you received or enter your username, email or user id below to send another.'
+            ],
+            'validation_failed' => [
+
+            ],
+            'pw_update_success' => [
+                'title' => 'Password Updated',
+                'alert_color' => 'success',
+                'content' => 'Your password has been updated.',
+            ],
+            'admin_pw_update_success' => [
+                'title' => 'Password Updated',
+                'alert_color' => 'success',
+                'content' => 'The password has been updated.',
+            ],
+
+            'account_update_no_change' => [
+                'title' => 'Account Not Updated',
+                'alert_color' => 'info',
+                'content' => 'You did not change any data.',
+            ],
+            'admin_account_delete_success' => [
+                'title' => 'Account Deleted',
+                'alert_color' => 'success',
+                'content' => 'The account has been deleted.',
+                'dismissible' => false,
+            ],
+            'account_update_success' => [
+                'title' => 'Account Updated',
+                'alert_color' => 'success',
+                'content' => 'Your account has been updated.',
+            ],
+            'admin_account_update_success' => [
+                'title' => 'Account Updated',
+                'alert_color' => 'success',
+                'content' => 'The account has been updated.',
+            ],
+            'register_success_auto' => [
+                'title' => 'Account Registered',
+                'alert_color' => 'success',
+                'content' => 'Your account has been created and you can now log in.',
+                'dismissible' => false,
+            ],
+            'register_success_email' => [
+                'title' => 'Account Registered',
+                'alert_color' => 'success',
+                'content' => 'Your account has been created. You will receive an email containing a link to complete the registration.',
+                'dismissible' => false,
+            ],
+            'register_success_manual' => [
+                'title' => 'Account Registered',
+                'alert_color' => 'success',
+                'content' => 'Your account has been created and is awaiting authorisation.',
+                'dismissible' => false,
+            ],
+            'incorrect_verify_link' => [
+                'title' => 'Incorrect Link',
+                'alert_color' => 'success',
+                'content' => ['content'=>'The details provided did not match any accounts.','Please use the link provided in your registration email.'],
+            ],
+            'account_verified' => [
+                'title' => 'Account Verified',
+                'alert_color' => 'success',
+                'content' => ['content'=>'Your account has been verified.','You can now log in using the details you used to register.',Php2Html::a(['content'=>'Home', 'href'=>'/'])],
+                'dismissible' => false,
+            ],
+            'admin_user_unverified' => [
+                'title' => 'Account not verified',
+                'alert_color' => 'warning',
+                'content' => '',
+                'dismissible' => false,
+            ],
+            'admin_user_banned' => [
+                'title' => 'Account banned',
+                'alert_color' => 'danger',
+                'content' => '',
+                'dismissible' => false,
+            ]
+        ];
+    }
+
+    /**
+     * Get the total most recent record
+     *
+     * @return int 	    Count of rows
+     */
+    public function mostRecent() {
+        // Select all records from the database
+        $_qry  =  $this->db()->query('SELECT * FROM '.$this->_db_table .' ORDER BY `joined` DESC LIMIT 1');
+
+        // Return a count of the records returned
+        return $_qry->first();
+    } // mostRecent()
+
+
+    /**
+     * Show the reset password  link form
+     *
+     * Displays the reset password link
+     *
+     * @return 	string Reset Password Link Form
+     */
+    public function resetPasswordForm($_form_data=[]){
+
+        /*
+            After a failed post, want to repopulate the form with
+            the posted data so the user does not have to fill it all in again, along with any required field validation styles.
+
+            We use an array called $_field_data to stored these ready for use
+            so create an empty version before doing the checks.
+         */
+        $_field_data = [];
+
+        /*
+            Create an array of the fields that will always be used in the form.
+
+            As we go along, we any others that we require, based on the type of
+            form we are using before we generate the form.
+         */
+        $_form_fields = [
+            'password', 'confirm_password'
+        ];
+
+        foreach ($_form_fields as $value) {
+            // Check for errors
+            if (isset($_form_data['errors'][$value])) {
+                // Errors found for the field so add invalid class
+                $_field_data[$value]['class'] = 'is-invalid';
+            } else {
+                // No errors found so if there is posted data, add the valid class
+                $_field_data[$value]['class'] = (Input::exists()) ? 'is-valid' : '';
+            }
+
+            // Check for posted data
+            if (Input::exists($value)) {
+                // There is posted data so set that as the value
+                $_field_data[$value]['val'] = Input::get($value);
+            } else {
+                // There is no posted data so see if a record has been passed in
+                if (isset($_form_data['data'])) {
+                    // There is a record passed in so set that as the value
+                    $_field_data[$value]['val'] = $_form_data['data']->$value;
+                } else {
+                    // There is no record passed in so set the value as blank
+                    $_field_data[$value]['val'] = '';
+                }
+            } // if (Input::exists($value))
+        } // foreach($_form_fields)
+
+
+        /**
+         * Set the output variable
+         *
+         * The final output will be built as a variable called
+         * $text so create it ready to add to
+         *
+         * @var null
+         */
+        $text = '';
+
+        $content = '';
+
+        $content .= Php2Bs::bs_form_row ([
+            //'class' => '',
+            'content' =>
+            # Password
+            Php2Bs::bs_form_group ([
+                'class' => 'col-md-6',
+                'content' => Php2Html::label ([
+                    'for' => 'Password',
+                    'content' => 'Password',
+                    'class' => 'mb-0',
+                ]) // Php2Html::label
+                .Php2Bs::bs_input_password ([
+                    'id' => 'Passsword',
+                    'name' => 'password',
+                    'placeholder' => 'Passsword',
+                    'class' => $_field_data['password']['class'],
+                    'value' => $_field_data['password']['val'],
+                    'aria' => [
+                        'describedby' => 'Password'
+                    ],
+                ]) // password
+            ]) // Php2Html::div.form-group
+            # Confirm_Password
+            .Php2Bs::bs_form_group ([
+                'class' => 'col-md-6',
+                'content' => Php2Html::label ([
+                    'for' => 'Confirm_Password',
+                    'content' => 'Confirm Password',
+                    'class' => 'mb-0',
+                ]) // Php2Html::label
+            .Php2Bs::bs_input_password ([
+                    'id' => 'Confirm_Password',
+                    'name' => 'confirm_password',
+                    'placeholder' => 'Confirm Password',
+                    'class' => $_field_data['confirm_password']['class'],
+                    'value' => $_field_data['confirm_password']['val'],
+                    'aria' => [
+                        'describedby' => 'Confirm_Password'
+                    ],
+                ]) // Php2Bs::bs_input_password
+            ]) // Php2Bs::bs_form_group
+        ]); // Php2Bs::bs_form_row
+
+        $content .= Php2Html::button ([
+            'button_type' => 'submit',
+            'class' => 'btn btn-primary btn-sm float-right',
+            'content' => 'Reset',
+            'name' => 'reset_password'
+        ]);
+
+        $text .= Php2Html::form([
+            'id' => '',
+            'action' => '',
+            'method' => 'post',
+            'class' => '',
+            'content' => $content
+        ]);
+
+        // Return the output
+        return $text;
+    } // loginForm()
+
+
+    /**
+     * Show the reset password  link form
+     *
+     * Displays the reset password link
+     *
+     * @return 	string Reset Password Link Form
+     */
+    public function resetPasswordLinkForm($_form_data=[]){
+        /**
+         * Set the output variable
+         *
+         * The final output will be built as a variable called
+         * $text so create it ready to add to
+         *
+         * @var null
+         */
+        $text = '';
+
+        $content = '';
+
+        $content .= Php2Bs::bs_input_group ([
+            'group' => [
+                'class' => 'mb-2'
+            ],
+
+            'prepend' => [
+                'class' => '',
+                'content' => '<i class="fas fa-user fa-sm"></i>',
+                'id' => 'username_field'
+            ],
+
+            'input' => [
+                'class' => '',
+                'type' => 'text',
+                'id' => 'Username',
+                'name' => 'username',
+                'placeholder' => 'Username, email or id',
+                'aria' => [
+                    'label' => 'Username',
+                    'describedby' => 'username_field',
+                ]
+            ],
+
+        ]); // Php2Html::div.form-group
+
+        $content .= Php2Html::button ([
+            'button_type' => 'submit',
+            'class' => 'btn btn-primary btn-sm float-right',
+            'content' => 'Send Email',
+            'name' => 'send_reset_email'
+        ]);
+
+        $text .= Php2Html::form([
+            'id' => '',
+            'action' => '',
+            'method' => 'post',
+            'class' => '',
+            'content' => $content
+        ]);
+
+        // Return the output
+        return $text;
+    } // loginForm()
+
+    /**
+     * Set the user cookie
+     * @param string $hash The hash value stored in gthe login cookie table
+     */
+    public function setCookie() {
+        // Create a new hash to store in the cookie
+        $_hash = Hash::unique();
+
+        // Check to see if this user already has a login hash - if so, something is wrong with logouts
+        $hashCheck = self::db()->get('login_cookie', array('user_id', '=', $this->data()->id));
+
+        // As long as there is no existing record, add one to the login_cookie table
+        if (!$hashCheck->count()) {
+
+            $this->db()->insert('login_cookie', array(
+                'user_id' => $this->data()->id,
+                'hash' => $_hash
+            ));
+        }
+        else
+        {
+            $_hash = $hashCheck->first()->hash;
+        }
+
+        Cookie::put(Settings::members()['user_cookie'], $_hash, Settings::members()['cookie_expiry']);
+    } // setUserCookie()
+
+    public function sendPasswordLinkMail ($email, $hash) {
+        // Insert the email and has as a record in user_hash
+        try {
+            SendMail::sendPasswordLink($email, $hash);
+        } catch(Exception $e) {
+        die();
+        }
+
+    } // sendVerifyMail()
+
+
+
+    /**
+     * Attempt a login
+     * @return Session/Cookie Login status and attempt information
+     */
+    public function tryLogin() {
+
+        /*
+            If we have a failed attempt at a login, followed by a succesfule one
+            from the full login page, we want to take the user back to the page
+            that they made the original attempt.
+
+            To do this, when a login is attempted, if $_SESSION['refer_page']
+            does not already exist and we are NOT on the full login page, we
+            we set it with the current URL to redirect back to.
+         */
+        if (!Session::exists('refer_page') && $_SERVER['REQUEST_URI'] !== '/Login/') {
+            Session::put('refer_page', $_SERVER['REQUEST_URI']);
+        }
+
+        /*
+            We check the login attempt in stages as there are certain things
+            that will mean a failure so we check those before we attempt to
+            process anything.
+
+            As soon as anything fails, we set the failure details as a session
+            and redirect to the full login page.
+         */
+
+        // Check if both fields have been filled
+        if (!Input::get('username')|| !Input::get('password')) {
+            Logs::login_fail([
+                'user' => (Input::get('username')) ? Input::get('username') : 'unknown',
+                'reason' => 'empty field',
+            ]);
+
+            // At least one field is empty so fail
+            Session::put('status','login_empty_fields');
+            Redirect::to('/Login/');
+        } else {
+            // Both fields have been filled so check that the username exists
+            if (!$this->find (Input::get('username'))) {
+                self::db()->insert(
+                    'activity',
+                    [
+                        'area' => '0',
+                        'user' => Session::get(Settings::members()['login_session']),
+                        'stamp' => date('Y-m-d H:i:s'),
+                        'type' => '6'
+                    ]
+                );
+
+                self::db()->insert(
+                    'failed_logins',
+                    [
+                        'user' => (Input::get('username')) ? Input::get('username') : 'unkown',
+                        'reason' => 'user not found',
+                        'ref' => self::db()->insertID()
+                    ]
+                );
+                // The username does not exist so fail
+                Session::put('status','login_not_found');
+                Redirect::to('/Login/');
+            } else {
+                // The username does exist check they are allowed to login
+                if($this->data()->status == '0') {
+                    self::db()->insert(
+                        'activity',
+                        [
+                            'area' => '0',
+                            'user' => Session::get(Settings::members()['login_session']),
+                            'stamp' => date('Y-m-d H:i:s'),
+                            'type' => '7'
+                        ]
+                    );
+
+                    self::db()->insert(
+                        'failed_logins',
+                        [
+                            'user' => (Input::get('username')) ? Input::get('username') : 'unkown',
+                            'reason' => 'user unverified',
+                            'ref' => self::db()->insertID()
+                        ]
+                    );
+                    // The user has not verified so fail
+                    Session::put('status','login_unverified');
+                    Redirect::to('/Login/');
+                }
+
+                if($this->data()->status == '-1') {
+                    self::db()->insert(
+                        'activity',
+                        [
+                            'area' => '0',
+                            'user' => Session::get(Settings::members()['login_session']),
+                            'stamp' => date('Y-m-d H:i:s'),
+                            'type' => '7'
+                        ]
+                    );
+                    self::db()->insert(
+                        'failed_logins',
+                        [
+                            'user' => (Input::get('username')) ? Input::get('username') : 'unkown',
+                            'reason' => 'user banned',
+                            'ref' => self::db()->insertID()
+                        ]
+                    );
+                    // The user is banned so fail
+                    Session::put('status','login_banned');
+                    Redirect::to('/Login/');
+                }
+
+                /*
+                    If we have got this far, the user exists, is verified and
+                    is not banned, so are allowed to login.
+
+                    We check the users password from the database against a string created using the posted password and the users
+                    salt from the database, via the make() function in core/Hash.php
+
+                    If the string matches the stored password, we log the user in.
+                 */
+                if ($this->data()->password === Hash::make(Input::get('password'), $this->data()->salt)) {
+                    /*
+                        The password is correct for the user so log them in by
+                        setting their id to the login session, as set in members()
+                        in core/Settings.php
+                     */
+                    Session::put(Settings::members()['login_session'], $this->data()->id);
+                    Session::put(Settings::members()['user_login_group'], $this->data()->group);
+
+                    Logs::login_success();
+
+                    // If the user has ticked the 'Remember Me' box, store a login cookie.
+                    if (Input::exists(['name'=>'remember'])) {
+                        $this->setCookie();
+                    }
+
+                    /*
+                        If we are on the full login page and the original request
+                        came from any page another page, send them back there.
+
+                        If they started on the full login page, send them to the
+                        home page.
+                     */
+                    if($_SERVER['REQUEST_URI'] === '/Login/') {
+                        if(Session::exists('refer_page')) {
+                            Redirect::to(Session::get('refer_page'));
+                        } else {
+                            Redirect::to('/home');
+                        }
+                    }
+                } else {
+                    self::db()->insert(
+                        'activity',
+                        [
+                            'area' => '0',
+                            'user' => Session::get(Settings::members()['login_session']),
+                            'stamp' => date('Y-m-d H:i:s'),
+                            'type' => '6'
+                        ]
+                    );
+
+                    self::db()->insert(
+                        'failed_logins',
+                        [
+                            'user' => (Input::get('username')) ? Input::get('username') : 'unkown',
+                            'reason' => 'incorrect pw',
+                            'ref' => self::db()->insertID()
+                        ]
+                    );
+                    // The password is incorrect so fail
+                    Session::put('status','login_not_pw');
+                    Redirect::to('/Login/');
+                }
+            }
+        }
+    }// tryLogin()
+
+    /**
+     * Attempt a logout
+     * @return Session/Cookie Login deletion
+     */
+    public function tryLogout() {
+        Logs::logout_success();
+
+        Session::delete(Settings::members()['login_session']);
+        Session::delete(Settings::members()['user_login_group']);
+        // If a login cookie is set, delete that as well
+        if($this->hasCookie()) {
+            $this->deleteCookie();
+        }
+    }
+
+    /**
+     * [update description]
+     * @param  [type] $record    [description]
+     * @param  [type] $_postdata [description]
+     * @return [type]            [description]
+     */
+    public function update($record, $_postdata) {
+        if (!self::db()->update($this->_db_table, $record, $_postdata))
+        {
+            // The update was unsuccesful
+            throw new Exception('There was a problem updating the account!');
+            // Flash a generic error message
+            $this->crudFlash ('generic_error');
+
+            return false;
+        }
+
+        return true;
+    }
+
+
+
+    /**
+     * User form
+     *
+     * Single function to control both the registration and edit
+     * user forms in the front end and admin area.
+     *
+     * Several parts of this form get hidden depending on parameters
+     * passed in.
+     *
+     * The parameters that can be used are
+     * 'errors' an array errored field names and error messages
+     * following a failed post attempt.
+     * 'version' whether we are in create mode or edit mode.
+     * 'area' shows which part of the site we are on where 'user'
+     * referes to front end and 'admin' refers to backend.
+     * 'data' will contain the user information in edit mode.
+     *
+     * @param  array    $_params    Version, area and error details
+     * @return string               User create/edit form
+     */
+    public function userForm ($_params) {
+
+        /*
+            After a failed post, want to repopulate the form with
+            the posted data so the user does not have to fill it all in again, along with any required field validation styles.
+
+            We use an array called $_field_data to stored these ready for use
+            so create an empty version before doing the checks.
+         */
+        $_field_data = [];
+
+        /*
+            Create an array of the fields that will always be used in the form.
+
+            As we go along, we any others that we require, based on the type of
+            form we are using before we generate the form.
+         */
+        $_form_fields = [
+            'username', 'email', 'firstname', 'lastname'
+        ];
+
+        /*
+            If we are in create mode we need the password fields so add those
+            to $_form_fields. If front end also need the terms added.
+         */
+        if($_params['version'] == 'create') {
+            $_form_fields[] = 'password';
+            $_form_fields[] = 'confirm_password';
+
+            if($_params['area'] == 'user') {
+                $_form_fields[] = 'terms';
+            }
+        }
+
+        /*
+            We now loop through the form fields array to check for validation
+            and data.
+
+            First we check to see if there is a matching value in the 'errors'
+            parameter passed in to the function. If there is we set the class
+            for that field in $_field_data to 'is-invalid'. If there is no
+            matching value, if there is any post data, we assume it must have
+            been succesful so set the class to 'is-valid', otherwise we just
+            leave it blank.
+
+            Then we check for any posted data, from a failed form submit. If
+            there is a match, we set it to the 'val' for that field in
+            $_field_data. If there is no match, we check to see if a record has been passed in via the 'data' parameter passed in to the function (create mode).
+            Again, if there is a match, we add that to 'val', otherwise we are left
+            with nothing to use as 'val' so leave it blank.
+
+            When creating the actual input for the field, we add anything in 'class'
+            to the input class="" and the 'val' to the value="".
+        */
+        foreach ($_form_fields as $value) {
+            // Check for errors
+            if (isset($_params['errors'][$value])) {
+                // Errors found for the field so add invalid class
+                $_field_data[$value]['class'] = 'is-invalid';
+            } else {
+                // No errors found so if there is posted data, add the valid class
+                $_field_data[$value]['class'] = (Input::exists()) ? 'is-valid' : '';
+            }
+
+            // Check for posted data if an account update has been attempted
+            if (Input::exists(['name'=>'update_user']) && Input::exists($value) && trim(Input::get($value)) !== false) {
+
+                // There is posted data so set that as the value
+                $_field_data[$value]['val'] = Input::get($value);
+            } else {
+                // There is no posted data so see if a record has been passed in
+                if (isset($_params['data'])) {
+                    // There is a record passed in so set that as the value
+                    $_field_data[$value]['val'] = $_params['data']->$value;
+                } else {
+                    // There is no record passed in so set the value as blank
+                    $_field_data[$value]['val'] = '';
+                }
+            } // if (Input::exists($value))
+        } // foreach($_form_fields)
+
+        /*
+            We now have everything we need so can start building the form.
+
+            We create the content first and then pass it into the form once we have
+            all of the fields created.
+
+            To start, we create an empty variable to hold the content and then add
+            to it as we go along.
+         */
+        $content = '';
+
+        // Add the Username and Email form row
+        $content .= Php2Bs::bs_form_row ([
+            'content' =>
+            # Username
+            Php2Bs::bs_form_group ([
+                'class' => 'col-md-6',
+                'content' => Php2Html::label ([
+                    'for' => 'Username',
+                    'content' => 'Username',
+                    'class' => 'mb-0',
+                ]) // Php2Html::label
+                .Php2Bs::bs_input_text ([
+                    'id' => 'Username',
+                    'name' => 'username',
+                    'placeholder' => 'Username',
+                    'class' => $_field_data['username']['class'],
+                    'value' => $_field_data['username']['val'],
+                    'aria' => [
+                        'describedby' => 'Username'
+                    ],
+                ]) // Php2Bs::bs_input_text
+            ]) // Php2Bs::bs_form_group
+            # Email
+            .Php2Bs::bs_form_group ([
+                'class' => 'col-md-6',
+                'content' => Php2Html::label ([
+                    'for' => 'Email',
+                    'content' => 'Email',
+                    'class' => 'mb-0',
+                ]) // Php2Html::label
+                .Php2Bs::bs_input_email ([
+                    'id' => 'Email',
+                    'name' => 'email',
+                    'placeholder' => 'Email',
+                    'class' => $_field_data['email']['class'],
+                    'value' => $_field_data['email']['val'],
+                    'aria' => [
+                        'describedby' => 'Email'
+                    ],
+                ]) // Php2Bs::bs_input_email
+            ]) // Php2Bs::bs_form_group
+        ]); // Username and password row
+
+        // First and Last Names Row
+        $content .= Php2Bs::bs_form_row ([
+            //'class' => '',
+            'content' =>
+            # Firstname
+            Php2Bs::bs_form_group ([
+                'class' => 'col-md-6',
+                'content' => Php2Html::label ([
+                    'for' => 'Firstname',
+                    'content' => 'Firstname',
+                    'class' => 'mb-0',
+                ]) // Php2Html::label
+                .Php2Bs::bs_input_text ([
+                    'id' => 'Firstname',
+                    'name' => 'firstname',
+                    'placeholder' => 'Firstname',
+                    'class' => $_field_data['firstname']['class'],
+                    'value' => $_field_data['firstname']['val'],
+                    'aria' => array (
+                        'describedby' => 'Firstname'
+                    ),
+                ]) // Php2Bs::bs_input_text
+            ]) // Php2Bs::bs_form_group
+            # Lastname
+            .Php2Bs::bs_form_group ([
+                'class' => 'col-md-6',
+                'content' => Php2Html::label ([
+                    'for' => 'Lastname',
+                    'content' => 'Lastname',
+                    'class' => 'mb-0',
+                ]) // Php2Html::label
+                .Php2Bs::bs_input_text ([
+                    'id' => 'Lastname',
+                    'name' => 'lastname',
+                    'placeholder' => 'Lastname',
+                    'class' => $_field_data['lastname']['class'],
+                    'value' => $_field_data['lastname']['val'],
+                    'aria' => array (
+                        'describedby' => 'Lastname'
+                    ),
+                ]) // Php2Bs::bs_input_text
+            ]) // Php2Bs::bs_form_group
+        ]); // First and last names row
+
+        // Password Row - only if we are in create mode
+        if($_params['version'] == 'create') {
+            // Password Row
+            $content .= Php2Bs::bs_form_row ([
+                //'class' => '',
+                'content' =>
+                # Password
+                Php2Bs::bs_form_group ([
+                    'class' => 'col-md-6',
+                    'content' => Php2Html::label ([
+                        'for' => 'Password',
+                        'content' => 'Password',
+                        'class' => 'mb-0',
+                    ]) // Php2Html::label
+                    .Php2Bs::bs_input_password ([
+                        'id' => 'Passsword',
+                        'name' => 'password',
+                        'placeholder' => 'Passsword',
+                        'class' => $_field_data['password']['class'],
+                        'value' => $_field_data['password']['val'],
+                        'aria' => [
+                            'describedby' => 'Password'
+                        ],
+                    ]) // password
+                ]) // Php2Html::div.form-group
+                # Confirm_Password
+                .Php2Bs::bs_form_group ([
+                    'class' => 'col-md-6',
+                    'content' => Php2Html::label ([
+                        'for' => 'Confirm_Password',
+                        'content' => 'Confirm Password',
+                        'class' => 'mb-0',
+                    ]) // Php2Html::label
+                .Php2Bs::bs_input_password ([
+                        'id' => 'Confirm_Password',
+                        'name' => 'confirm_password',
+                        'placeholder' => 'Confirm Password',
+                        'class' => $_field_data['confirm_password']['class'],
+                        'value' => $_field_data['confirm_password']['val'],
+                        'aria' => [
+                            'describedby' => 'Confirm_Password'
+                        ],
+                    ]) // Php2Bs::bs_input_password
+                ]) // Php2Bs::bs_form_group
+            ]); // Php2Bs::bs_form_row
+        } // Password row
+
+        /*
+            If we are in edit mode in the admin area, we can also change the
+            usergroup and the users status (active, banned, unverified) from
+            the same form so we have to add them to $content.
+
+            We create them individually as  $group_select and $status_select
+            before passing them into the form.
+         */
+        if($_params['version'] == 'edit' && $_params['area'] == 'admin') {
+
+            // Open up the Usergroups model
+            $groups = new M_Usergroups ();
+
+            /*
+                Create an empty $options variable to hold the contents of the
+                select menu that we will use to choose a group.
+             */
+            $options = '';
+
+            /*
+                Loop through the list of usergroups and for each one, create
+                and <option> tag to go inside the select menu and add it
+                to $content.
+             */
+            foreach ($groups->listing() as $key => $value) {
+                $options .= Php2Html::option ([
+                    'content' => $value->group_name,
+                    'value' => $value->id,
+                    'is_selected' => ($value->id == $_params['data']->group) ? true: false,
+                ]);
+            }
+
+            /*
+                Create the select menu, using the $options variable and
+                assign it to $group_select.
+             */
+            $group_select = Php2Bs::bs_select ([
+                'content' =>$options,
+                'id' => 'GroupName',
+                'name' => 'group'
+            ]);
+
+            /*
+                We now so exactly the same for the $status_select, except
+                that the listing is a hand built array that we create
+                directly in the foreach
+             */
+            $options = '';
+            foreach (['-1' =>'Banned', '0' => 'Unverified', '1' => 'Active'] as $key => $value) {
+
+                $options .= Php2Html::option ([
+                    'content' => $value,
+                    'value' => $key,
+                    'is_selected' => ($key == $_params['data']->status) ? true: false,
+                ]);
+            }
+
+            $status_select =  Php2Bs::bs_select ([
+                'content' =>$options,
+                'id' => 'StatusName',
+                'name' => 'status'
+            ]);
+
+            // Now add both dropdowns to the form
+            $content .= Php2Bs::bs_form_row ([
+                'content' =>
+                # User Group
+                Php2Bs::bs_form_group ([
+                    'class' => 'col-md-6',
+                    'content' => Php2Html::label ([
+                        'for' => 'GroupName',
+                        'content' => 'User Group',
+                        'class' => 'mb-0',
+                    ]) // Php2Html::label
+                    .$group_select
+                ]) // Php2Html::div.form-group
+
+                # Status
+                .Php2Bs::bs_form_group ([
+                    'class' => 'col-md-6',
+                    'content' => Php2Html::label ([
+                        'for' => 'StatusName',
+                        'content' => 'Status',
+                        'class' => 'mb-0',
+                    ]) // Php2Html::label
+                .$status_select
+                ]) // Php2Bs::bs_form_group
+            ]); // Php2Bs::bs_form_row
+        } // Password row
+
+        /*
+            If we are in front end create mode, we require both the Accept Terms
+            checkbox as well as the submit button, otherwise we just need the
+            submit button.
+
+            As we do not know if we will need both, we create an empty $bottom_row
+            variable and add what it requires, before passing it into a form row.
+         */
+        $bottom_row = '';
+
+        /*
+            If we are in front end create mode, we need to create a 'terms' checkbox an its parameters.
+         */
+        if(in_array("terms", $_form_fields)) {
+            // Create the parameters for the checkbox
+            $checkbox_array = [
+                'id' => 'Terms',
+                'name' => 'terms',
+                'placeholder' => 'Terms',
+                'class' => $_field_data['terms']['class'],
+                'aria' => [
+                    'describedby' => 'Terms'
+                ],
+            ];
+
+            // If it was checked on a previous post attempt, re-check it
+            if($_field_data['terms']['val']) {
+                $checkbox_array['checked'] = '';
+            } // if($_field_data['terms']['val'])
+
+            // Create the terms form group with the parameters set above
+            $bottom_row .= Php2Bs::bs_form_group ([
+                'class' => 'col-md-6',
+                'content' =>
+                # Terms
+                Php2Bs::bs_form_check ([
+                    //'class' => '',
+                    'content' => Php2Bs::bs_form_check_input (
+                        $checkbox_array
+                    ) // Php2Bs::bs_form_check_input
+                    .Php2Bs::bs_form_check_label ([
+                        //'class' => '',
+                        'for' => 'Terms',
+                        'content' => 'Accept Terms Below',
+                    ]) // Php2Bs::bs_form_check_label
+                ]) // Php2Bs::bs_form_check
+            ]); // Php2Bs::bs_form_group
+        } // if(in_array("terms", $_form_fields))
+
+        /*
+            The submit button also comes in a form-group but as we always want it to
+            appear on the right, we give it a class of 'col-md-6' when the terms
+            form-group is also required (that also uses 'col-md-6'), and 'col-12'
+            when we are showing just the button.
+
+            We set this to $button_group_size, based on whether or not 'terms'
+            has been added to the $_form_fields array.
+         */
+        $button_group_size = (in_array("terms", $_form_fields)) ? 'col-md-6': 'col-12';
+
+        // Set the details for the submit button based on the version
+        if($_params['version'] == 'edit') {
+            $button_name = 'update_user';
+            $button_text = 'Update';
+        }
+
+        if($_params['version'] == 'create') {
+            $button_name = 'register';
+            $button_text = 'Register';
+        }
+
+        $content .= Php2Bs::bs_form_row ([
+            'content' => Php2Bs::bs_form_group ([
+                'class' => $button_group_size,
+                'content' => Php2Bs::bs_button ([
+                    'button_type' => 'submit',
+                    'color' => 'primary',
+                    'size' => 'sm',
+                    'class' => 'float-right',
+                    'content' => $button_text,
+                    'name' => $button_name
+                ]) // Php2Bs::bs_button
+            ])// Php2Bs::bs_form_group
+        ]); // Bottom row
+
+        // Return the form
+        return Php2Html::form([
+            'id' => '',
+            'action' => '',
+            'method' => 'post',
+            'class' => 'req-token',
+            'content' => $content
+        ]); //  Php2Html::form
+
+    } // userForm ()
+
+
+    public function validate () {
+
+    }
+
+
+    /**
+     * Set the validation rules
+     *
+     * Sets the rules for any form fields the class uses when being
+     * processed.
+     *
+     * See the core/Validate.php class for information how these work.
+     *
+     * @return array Validation rules
+     */
+    public function validation_rules() {
+        return[
+            'username' => [
+                'required' => true,
+                'min' => 6,
+                'max' => 20,
+                'preg_match' => '/^[a-zA-Z]\w*[a-zA-Z0-9_]$/',
+                'unique' => 'users',
+            ],
+            'email' => [
+                'required' => true,
+                'filter' => "email",
+                'unique' => 'users',
+            ],
+            'firstname' => [
+                'required' => true,
+            ],
+            'lastname' => [
+                'required' => true,
+            ],
+            'password' => [
+                'required' => true,
+                'min' => 6
+            ],
+            'confirm_password' => [
+                'required' => true,
+                'matches' => 'password',
+                'error_text' => 'Confirm must match'
+            ],
+            'terms' => [
+                'required' => true,
+                'error_text' => 'You must read and accept the temrs and conditions'
+            ]
+        ];
+    }
+
+
+
+	// Set any private variables that can only be accessed within this file
+	private
+			$_record_data,
+			$_param,
+			$_list,
+
+
+
+	// The session name to be used in flash alerts
+		$_default_session_name = 'Users',
+
+            // Variables that are created in the class
+            $_postdata,
+            $_errortext,
+            $_errors,
+            $_inputs,
+            $_validate,
+            $_value;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	/**
+	 *	Perform a simple update on a record
+	 *
+	 * 	This performs a quick update on a record when a minimal number of fields are being updated OR
+	 *	validation is not required/has already been performed.
+	 *
+	 *	This will be particularly useful for changing user levels or banning/unbanning users.
+	 *
+	 **/
+	public function quickUpdate ($_refdata, $_postdata)
+	{
+		if (!self::db()->update($this->crud_table()->name, $_refdata, $_postdata))
+		{
+
+			// The update was unsuccesful
+			throw new Exception('There was a problem updating the account!');
+			// Flash a generic error message
+			$this->crudFlash ('generic_error');
+
+			return false;
+		}
+
+		return true;
+	}
+
+
+
+
+    /**
+         * Update a record
+         *
+         * Collects post data, validates it and updates specified record
+         * in the $this->crud_table()->name
+        *
+         * @param  int  $record  Record ID
+         */
+	public function updateOld($record=null, $admin=true)
+	{
+		/*
+			During the update process, we will validate any posted data to
+			ensure no field rules are being broken.
+
+			This validation returns multiple keys in an array including the status and any errors.
+
+			We create an empty object called $_validate ready to hold these. Although
+			$_validate->error is primarily used to store the validation error arrays, we can
+			also use it to store a string to describe any non-validation errors that have
+			prevented the create, such as a token mismatch, a not found record or posted
+			data not being different to existing data.
+
+			The view checks it $_validate->error is an object and if so, returns the array of
+			errors, otherwise it returns a message based on the string.
+		 */
+		$_validate = (object)array();
+
+		/*
+			By the time we get to the actual update part, we only want valid $_POST
+			data to remain ready for updating. To achieve this, we unset any
+			unrequired $_POST data as we go along.
+
+			Just in case we need to reference any original $_POST data, we set
+			it to $_postdata, which we then use as the final update data. It is
+			this we will unset any unrequired variables from.
+		 */
+		$_postdata = $_POST;
+
+		// Unset the submit button from the $_postdata.
+		unset($_postdata[self::$_default_submit_button]);
+
+
+		/*
+			The forms all have .req-token to prevent double-posting on page
+			refresh. This generates a new $_SESSSION['token'] value and also
+			adds a hidden form element containing the $_SESSSION['token'].
+
+			We need to check that the posted token matches the current $_SESSSION['token']
+			and only proceed if it does.
+		 */
+		if(!Token::check(Input::get('token')))
+		{
+			// The token check failed so set the errors to 'token'
+			$_validate->error = 'token';
+
+		}
+		else
+		{
+			/*
+				The token check is succesful, so we again unset that from the $_postdata,
+				to ensure we only have valid insert data left.
+			 */
+			unset($_postdata['token']);
+
+
+			/*
+				We now use the record details to check against the $_postdata
+
+				This helps us to check which fields are actually being changed and only process, validate and only update those.
+
+				The name="" attribute of each of the form fields matches the respective column name to allow this.
+
+				We loop through $_postdata and for each we check them against the respective existing data and if they match, unset the $_postdata record.
+
+				This will avoid errors with fields that have to be unique and also should be faster as we are only actually processing changed data.
+			*/
+			foreach ($_postdata as $key => $value)
+			{
+				/*
+					Check the posted data against existing values
+
+					Checks the value of the input and checks the corresponding record
+					in the table to see it has changed. If not, it will unset it.
+				*/
+				if($value && $value == $this->data()->$key)
+				{
+					// The posted value matches the database field value so unset it
+					unset($_postdata[$key]);
+				}
+
+			} // End foreach loop
+
+
+			/*
+				Now $_postdata should contain only $_POST data from the actual input
+				fields.
+
+				If there is data left, we attempt to validate and insert it.
+			 */
+			if(!empty($_postdata))
+			{
+				/*
+					There is $_postdata so we attempt to validate it.
+
+					The validation for this form is held in $_default_form_fields in the __Core class
+					so we pass this into Form_Functions::postValidate(), along with the $_postdata and
+					this checks each field in $_postdata against it's relevant validation if it exists.
+
+					the function returns a boolean 'status' as to
+					whether validation was passed.
+
+					If validation failed, it will also contain any validation errors
+					that have been generated.
+				 */
+				$_validate = Form_Functions::postValidate($_postdata, self::form_fields());
+
+				/*
+					One of the keys returned by postValidate() is 'status'. This is a boolean which simply states whether the validation was successful or not.
+
+					If $_validate->status is true, validation passed and we can attempt the insert, otherwise we do nothing and the view will show the errors that are return at the bottom of this function
+				 */
+				if($_validate->status)
+				{
+					/*
+						$_validate->status has returned true so all is ok so attempt the insert.
+
+						We do this using the process() function, passing in 'update'
+						as the method along with the $_postdata and the record id.
+					*/
+					// We do not have to unset, add or amend any $_postdata so can go straight into the update
+					if (!self::db()->update($this->crud_table()->name, $record->id, $_postdata))
+					{
+						// The update was unsuccesful
+						throw new Exception('There was a problem updating the account!');
+						// Flash a generic error message
+						$this->crudFlash ('generic_error');
+
+						return false;
+					}
+					else
+					{
+						/*
+							If we have changed the 'username' field, the url will no longer work
+							as it is looking for the old name.
+
+							We check to see if the username still exists in _postdata and if so, if it matches
+							the original name.
+
+							If it does we re-direct to the edit page of the new username.
+						 */
+
+						if($admin)
+						{
+							if(isset($_postdata['username']) && $_postdata['username'] !== $record->username)
+							{
+								/*
+									As we are redirecting to a new page, it will not pick up the $data posted to
+									the view so we set a flash alert that will be picked up there.
+								 */
+								Bootstrap::flashAlert(
+									$variable = $this->_default_class_name,
+									$color = 'success',
+									$heading = $this->_default_title . ' updated!',
+									$body = 'The ' . $this->_default_title . ' was successfully updated.',
+									$dismissible=true
+								    );
+
+								Redirect::to ($this->_default_controller_path . 'Edit/' . $_postdata['username']);
+							}
+
+						} // Admin username redirect checks
+
+					}
+
+				}  // if($validate->status)
+
+			}
+			else
+			{
+				/*
+				    There is no $_postdata so it can only be that a form was posted with no
+				    changed data so set the errors to 'nochange'
+				 */
+				$_validate->error = 'nochange';
+
+			} // empty($_postdata) check
+
+		} // Token::check()
+
+		// Return any validation errors if they have been set
+		return (isset($_validate->error)) ? $_validate->error : false ;
+
+	} // update()
+
+
+
+
+
+
+	###############################################################################
+	#  Probably deprecated
+	###############################################################################
+
+    /**
+        *  Create a Session::flash message for crud functions
+        *
+        * @param  string 	$type    The type of message we are setting
+        * @param  string 	$text    Additional alert body text
+        * @return $_SESSION variabloe containing a Bootstrap alert
+        *
+        */
+       public function crudFlash ($type, $text=null)
+       {
+           Form_Functions::crudAlert ($this->_default_title, $this->_default_session_name, $type, $text);
+
+       } // crudFlash()
+
+
+}
+
+
