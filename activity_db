@@ -1,0 +1,311 @@
+-- phpMyAdmin SQL Dump
+-- version 4.4.0-dev
+-- http://www.phpmyadmin.net
+--
+-- Host: localhost
+-- Generation Time: Feb 14, 2018 at 03:41 PM
+-- Server version: 5.5.42
+-- PHP Version: 5.6.6
+
+SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
+SET time_zone = "+00:00";
+
+--
+-- Database: `hub`
+--
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `activity`
+--
+
+CREATE TABLE IF NOT EXISTS `activity` (
+  `id` int(11) NOT NULL,
+  `area` varchar(1) NOT NULL,
+  `user` int(11) DEFAULT NULL,
+  `stamp` datetime NOT NULL,
+  `type` int(11) NOT NULL,
+  `status` varchar(1) DEFAULT NULL,
+  `target` varchar(20) DEFAULT NULL,
+  `record` int(11) DEFAULT NULL
+) ENGINE=MyISAM AUTO_INCREMENT=53 DEFAULT CHARSET=utf8;
+
+--
+-- Dumping data for table `activity`
+--
+
+INSERT INTO `activity` (`id`, `area`, `user`, `stamp`, `type`, `status`, `target`, `record`) VALUES
+(1, '0', 1, '2018-02-13 16:44:28', 5, '', NULL, NULL),
+(2, '0', 1, '2018-02-13 16:44:31', 4, '', NULL, NULL),
+(3, '0', 1, '2018-02-13 16:45:37', 5, '', NULL, NULL),
+(4, '0', 1, '2018-02-14 11:59:17', 4, '', NULL, NULL),
+(5, '0', 0, '2018-02-14 12:02:38', 4, '', NULL, NULL),
+(6, '0', 0, '2018-02-14 12:03:28', 6, '', NULL, NULL),
+(7, '0', 0, '2018-02-14 12:04:15', 6, '', NULL, NULL),
+(8, '0', 0, '2018-02-14 12:04:29', 6, '', NULL, NULL),
+(9, '0', 0, '2018-02-14 12:05:32', 6, '', NULL, NULL),
+(10, '0', 0, '2018-02-14 12:06:33', 6, '', NULL, NULL),
+(11, '0', 0, '2018-02-14 12:06:41', 6, '', NULL, NULL),
+(12, '0', 0, '2018-02-14 12:08:17', 6, '', NULL, NULL),
+(13, '0', 1, '2018-02-14 12:09:18', 4, '', NULL, NULL),
+(14, '0', 1, '2018-02-14 12:10:04', 5, '', NULL, NULL),
+(15, '0', 1, '2018-02-14 12:44:03', 4, '', NULL, NULL),
+(16, '0', 1, '2018-02-14 12:47:10', 5, '', NULL, NULL),
+(17, '0', 1, '2018-02-14 13:32:39', 4, '', NULL, NULL),
+(18, '0', 1, '2018-02-14 13:36:22', 5, '', NULL, NULL),
+(19, 'f', 0, '2018-02-14 13:37:16', 8, '', NULL, NULL),
+(20, 'f', 0, '2018-02-14 13:48:26', 8, '', NULL, NULL),
+(21, 'f', 0, '2018-02-14 13:50:53', 8, '', NULL, NULL),
+(22, 'f', 0, '2018-02-14 13:54:50', 8, '', NULL, NULL),
+(23, 'f', 0, '2018-02-14 14:06:52', 8, '', NULL, NULL),
+(24, 'f', 0, '2018-02-14 14:08:10', 8, '', NULL, NULL),
+(25, 'f', 0, '2018-02-14 14:08:37', 8, '', NULL, NULL),
+(26, 'f', 0, '2018-02-14 14:09:04', 8, '', NULL, NULL),
+(27, 'f', 0, '2018-02-14 14:10:10', 8, '', NULL, NULL),
+(28, 'f', 0, '2018-02-14 14:10:37', 8, '', NULL, NULL),
+(29, 'f', 0, '2018-02-14 14:12:52', 8, '', NULL, NULL),
+(30, 'f', 0, '2018-02-14 14:33:54', 8, '', NULL, NULL),
+(31, 'f', 0, '2018-02-14 14:36:17', 8, '', NULL, NULL),
+(32, 'f', 0, '2018-02-14 14:38:01', 8, '', NULL, NULL),
+(33, 'f', 0, '2018-02-14 14:38:51', 8, '', NULL, NULL),
+(34, 'f', 0, '2018-02-14 14:40:43', 8, '', NULL, NULL),
+(35, 'f', 11, '2018-02-14 14:40:51', 7, '', NULL, NULL),
+(36, '0', 1, '2018-02-14 14:49:15', 4, '', NULL, NULL),
+(37, 'f', 1, '2018-02-14 14:51:19', 1, '', 'user_groups', 9),
+(38, 'f', 1, '2018-02-14 14:52:58', 1, '', 'user_groups', 10),
+(39, '0', 1, '2018-02-14 15:03:37', 5, NULL, NULL, NULL),
+(40, 'f', NULL, '2018-02-14 15:04:05', 6, 'p', NULL, NULL),
+(41, 'f', NULL, '2018-02-14 15:04:27', 6, 'f', NULL, NULL),
+(42, 'f', NULL, '2018-02-14 15:05:16', 6, 'f', NULL, NULL),
+(43, 'f', NULL, '2018-02-14 15:06:04', 6, 'f', NULL, NULL),
+(44, 'f', 12, '2018-02-14 15:06:26', 6, 'p', NULL, NULL),
+(45, '0', NULL, '2018-02-14 15:07:59', 4, 'f', NULL, NULL),
+(46, '0', NULL, '2018-02-14 15:08:38', 4, 'f', NULL, NULL),
+(47, '0', 1, '2018-02-14 15:08:56', 4, 'p', NULL, NULL),
+(48, 'f', 1, '2018-02-14 15:12:16', 1, 'p', 'user_groups', 11),
+(49, 'f', 1, '2018-02-14 15:28:11', 1, 'p', 'user_groups', 12),
+(50, 'a', 1, '2018-02-14 15:36:11', 1, 'f', 'user_groups', NULL),
+(51, 'a', 1, '2018-02-14 15:39:35', 1, 'f', 'user_groups', NULL),
+(52, 'a', 1, '2018-02-14 15:40:10', 1, 'f', 'user_groups', NULL);
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `activity_failed_logins`
+--
+
+CREATE TABLE IF NOT EXISTS `activity_failed_logins` (
+  `id` int(11) NOT NULL,
+  `ref` int(11) NOT NULL,
+  `user` varchar(40) NOT NULL,
+  `reason` varchar(40) NOT NULL
+) ENGINE=InnoDB AUTO_INCREMENT=17 DEFAULT CHARSET=utf8;
+
+--
+-- Dumping data for table `activity_failed_logins`
+--
+
+INSERT INTO `activity_failed_logins` (`id`, `ref`, `user`, `reason`) VALUES
+(1, 0, 'SteveB', 'user unverified'),
+(2, 0, 'SteveB', 'user unverified'),
+(3, 0, 'SteveB', 'user unverified'),
+(4, 0, 'SteveB', 'user unverified'),
+(5, 0, 'unknown', 'empty field'),
+(6, 0, 'unknown', 'empty field'),
+(7, 5, '', 'empty_field'),
+(8, 6, '', 'empty_field'),
+(9, 7, 'unknown', 'empty_field'),
+(10, 8, 'SteveB', 'empty_field'),
+(11, 9, 'SteveBf', 'user_not_found'),
+(12, 10, 'SteveB', 'user_banned'),
+(13, 11, 'SteveB', 'user_unverified'),
+(14, 12, 'SteveB', 'incorrect_pw'),
+(15, 45, 'SteveBw', 'user_unverified'),
+(16, 46, 'SteveBwww', 'user_not_found');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `activity_failed_registrations`
+--
+
+CREATE TABLE IF NOT EXISTS `activity_failed_registrations` (
+  `id` int(11) NOT NULL,
+  `ref` int(11) NOT NULL,
+  `field` varchar(40) NOT NULL,
+  `value` varchar(40) NOT NULL
+) ENGINE=InnoDB AUTO_INCREMENT=37 DEFAULT CHARSET=utf8;
+
+--
+-- Dumping data for table `activity_failed_registrations`
+--
+
+INSERT INTO `activity_failed_registrations` (`id`, `ref`, `field`, `value`) VALUES
+(1, 27, 'username', 'exists'),
+(2, 27, 'email', 'null'),
+(3, 27, 'firstname', 'null'),
+(4, 27, 'lastname', 'null'),
+(5, 27, 'confirm_password', 'null'),
+(6, 27, 'terms', 'null'),
+(7, 28, 'username', 'max_length'),
+(8, 28, 'confirm_password', 'no_match'),
+(9, 28, 'terms', 'null'),
+(10, 29, 'username', 'max_length'),
+(11, 29, 'confirm_password', 'no_match'),
+(12, 29, 'terms', 'null'),
+(13, 30, 'terms', 'null'),
+(14, 31, 'terms', 'null'),
+(15, 32, 'terms', 'null'),
+(16, 33, 'terms', 'null'),
+(17, 34, 'terms', 'null'),
+(18, 40, 'username', 'exists'),
+(19, 40, 'email', 'null'),
+(20, 40, 'firstname', 'null'),
+(21, 40, 'lastname', 'null'),
+(22, 40, 'confirm_password', 'null'),
+(23, 40, 'terms', 'null'),
+(24, 41, 'username', 'exists'),
+(25, 41, 'email', 'null'),
+(26, 41, 'firstname', 'null'),
+(27, 41, 'lastname', 'null'),
+(28, 41, 'confirm_password', 'null'),
+(29, 41, 'terms', 'null'),
+(30, 42, 'username', 'exists'),
+(31, 42, 'email', 'null'),
+(32, 42, 'firstname', 'null'),
+(33, 42, 'lastname', 'null'),
+(34, 42, 'confirm_password', 'null'),
+(35, 42, 'terms', 'null'),
+(36, 43, 'terms', 'null');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `activity_table_updates`
+--
+
+CREATE TABLE IF NOT EXISTS `activity_table_updates` (
+  `id` int(11) NOT NULL,
+  `ref` int(11) NOT NULL,
+  `field` varchar(40) NOT NULL,
+  `value` text NOT NULL,
+  `old_value` text
+) ENGINE=InnoDB AUTO_INCREMENT=21 DEFAULT CHARSET=utf8;
+
+--
+-- Dumping data for table `activity_table_updates`
+--
+
+INSERT INTO `activity_table_updates` (`id`, `ref`, `field`, `value`, `old_value`) VALUES
+(1, 27, 'username', 'exists', NULL),
+(2, 27, 'email', 'null', NULL),
+(3, 27, 'firstname', 'null', NULL),
+(4, 27, 'lastname', 'null', NULL),
+(5, 27, 'confirm_password', 'null', NULL),
+(6, 27, 'terms', 'null', NULL),
+(7, 28, 'username', 'max_length', NULL),
+(8, 28, 'confirm_password', 'no_match', NULL),
+(9, 28, 'terms', 'null', NULL),
+(10, 29, 'username', 'max_length', NULL),
+(11, 29, 'confirm_password', 'no_match', NULL),
+(12, 29, 'terms', 'null', NULL),
+(13, 30, 'terms', 'null', NULL),
+(14, 31, 'terms', 'null', NULL),
+(15, 32, 'terms', 'null', NULL),
+(16, 33, 'terms', 'null', NULL),
+(17, 34, 'terms', 'null', NULL),
+(18, 51, 'group_name', 'null', NULL),
+(19, 52, 'group_name', 'Group_name already exists', NULL),
+(20, 52, 'permissions', 'null', NULL);
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `activity_types`
+--
+
+CREATE TABLE IF NOT EXISTS `activity_types` (
+  `id` int(11) NOT NULL,
+  `type_name` varchar(20) NOT NULL,
+  `created_by` int(11) NOT NULL,
+  `created_date` datetime NOT NULL
+) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8;
+
+--
+-- Dumping data for table `activity_types`
+--
+
+INSERT INTO `activity_types` (`id`, `type_name`, `created_by`, `created_date`) VALUES
+(1, 'create', 1, '2018-02-13 15:29:04'),
+(2, 'update', 1, '2018-02-13 15:29:09'),
+(3, 'delete', 1, '2018-02-13 15:29:12'),
+(4, 'login', 1, '2018-02-13 15:29:16'),
+(5, 'logout', 1, '2018-02-13 15:29:27'),
+(6, 'register', 1, '2018-02-13 15:31:41'),
+(7, 'register_success', 1, '2018-02-14 12:46:02'),
+(8, 'register_fail', 1, '2018-02-14 13:32:57');
+
+--
+-- Indexes for dumped tables
+--
+
+--
+-- Indexes for table `activity`
+--
+ALTER TABLE `activity`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `activity_failed_logins`
+--
+ALTER TABLE `activity_failed_logins`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `activity_failed_registrations`
+--
+ALTER TABLE `activity_failed_registrations`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `activity_table_updates`
+--
+ALTER TABLE `activity_table_updates`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `activity_types`
+--
+ALTER TABLE `activity_types`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- AUTO_INCREMENT for dumped tables
+--
+
+--
+-- AUTO_INCREMENT for table `activity`
+--
+ALTER TABLE `activity`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT,AUTO_INCREMENT=53;
+--
+-- AUTO_INCREMENT for table `activity_failed_logins`
+--
+ALTER TABLE `activity_failed_logins`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT,AUTO_INCREMENT=17;
+--
+-- AUTO_INCREMENT for table `activity_failed_registrations`
+--
+ALTER TABLE `activity_failed_registrations`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT,AUTO_INCREMENT=37;
+--
+-- AUTO_INCREMENT for table `activity_table_updates`
+--
+ALTER TABLE `activity_table_updates`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT,AUTO_INCREMENT=21;
+--
+-- AUTO_INCREMENT for table `activity_types`
+--
+ALTER TABLE `activity_types`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT,AUTO_INCREMENT=9;
