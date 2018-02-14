@@ -309,3 +309,47 @@ ALTER TABLE `activity_table_updates`
 --
 ALTER TABLE `activity_types`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT,AUTO_INCREMENT=9;
+
+
+
+
+--
+-- Table structure for table `systems`
+--
+
+CREATE TABLE IF NOT EXISTS `systems` (
+  `id` int(11) NOT NULL,
+  `system_name` varchar(60) NOT NULL,
+  `created_by` int(11) NOT NULL,
+  `created_date` datetime NOT NULL
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8;
+
+--
+-- Dumping data for table `systems`
+--
+
+INSERT INTO `systems` (`id`, `system_name`, `created_by`, `created_date`) VALUES
+(1, 'TIA', 1, '2018-02-13 13:18:58'),
+(2, 'Web', 1, '2018-02-13 13:30:12'),
+(3, 'AFE', 1, '2018-02-13 13:34:39'),
+(4, 'SID', 1, '2018-02-14 11:44:08');
+
+--
+-- Indexes for dumped tables
+--
+
+--
+-- Indexes for table `systems`
+--
+ALTER TABLE `systems`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- AUTO_INCREMENT for dumped tables
+--
+
+--
+-- AUTO_INCREMENT for table `systems`
+--
+ALTER TABLE `systems`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT,AUTO_INCREMENT=5;
