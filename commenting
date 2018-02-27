@@ -1,0 +1,5601 @@
+<?php
+
+/**
+ * Front End Home Controller
+ *
+ * Controller for any functions/views called from the site root as well
+ * as the home page itself. These are the site home page, the login page
+ * and the registration page.
+ *
+ * This file cannot contain any functions with the same name as a any files
+ * or level 1 directories in /app/controllers/
+ *
+ * This files also acts as a reference to how all controllers (both front-end
+ * and admin) collate the information and pass this to the relevant view.
+ *
+ * This controller will be activated when the first parameter in the url does
+ * not match any files or folders within the controllers folder.
+ *
+ * The examples at the end of this opening comment show the urls that call
+ * this controller and each of them cause a function within this file to
+ * be executed.
+ *
+ * For a full explanation of how the controllers work and get from receiving
+ * the request to showing the content, check out the 'Amend and Extend'
+ * section at https://github.com/MargateSteve/Framework/.
+ *
+ * Any messages that are required in the view, such as post succss or failure
+ * and errors are passed in as $params['status'] with a reference to look up
+ * in the models messages () function.
+ *
+ * @package     Core
+ * @author      Steve Ball <steve@follyball.co.uk>
+ * @copyright   Copyright (c) 2018 Steve Ball <steve@follyball.co.uk>
+ * @link 	    http://yoursite/
+ * @link    	http://yoursite/Login
+ * @link 	    http://yoursite/Register
+ */
+class Home extends Controller
+{
+    private $_args,
+            $_default_model,
+            $_logs,
+            $_postdata,
+            $_rules,
+            $_user,
+            $_view_data;
+
+    /*
+        As soon as this class is called, there are two things that we set for quick access whenever required.
+
+        The first is to open the most commonly accessed model from within this file and assign that to $this->_default_model.
+
+        The other opens the Logs core class ('/app/core/Logs.php') that controls the saving of user activity, which we assign to $this->_logs.
+     */
+	public function __construct () {
+		$this->_default_model = $this->model('M_Users');
+        $this->_logs = new Logs();
+	} // __construct ()
+
+	/**
+	 * Site Home Page
+	 *
+	 * This is the page that will be seen when viewing the site root.
+	 *
+	 * This will generally show latest updates as the primary focus but for now,
+     * we just show some temporary content.
+     *
+     * $_args is not used for anything other than to cause a 404 error if there
+     * are incorrect url parameters. The index() method is purely for showing
+     * the home page so if the controller has parsed the url and not found any
+     * other matches, meaning we have ended up here, if there is anything left
+     * in the url, we force the 404.
+     *
+     * At this point assuming we have passed the 404 check, We need to choose
+     * the correct view to use and pass in the required details. We do this but
+     * using the view() function in the '/app/core/Controller.php' class that
+     * this one extends.
+     *
+     * view() takes two arguments. The first is a delimated path through the
+     * 'app/views' folder to the required view file. For this method that is set
+     * as 'home/index' which means we are sending to the view at
+     * 'app/views/home/index.php'.
+     *
+     * The second argument is an array of page specific detail such as the page
+     * title and any content to display. With thte temporary content on the home
+     * page that we are using, we actually set that in the view, so all we pass
+     * in this method is the page title and subtitle.  For methods that have more
+     * variables and working out to do, we build the content up gradually.
+	 *
+     * @param   mixed    $_args     If not null, forces a 404
+     * @return 	         /app/views/home/index.php
+	 * @link 	         http://yoursite/
+	 */
+	public function index($_args=null) {
+        /*
+            As we are viewing the home page, we are assuming that the url will be http://yoursite/. However, if there has been a malformed url that does not match any of the controller directories or files, we will also end up at this method in this file.
+
+            As an example, http://yoursite/GetMembers/New/ has no controller matches so by the time we get to this method, we still have 'GetMembers' and 'New' to deal with. The fact that these will be seen as an argument means that $_args no contains something and is no longer null.
+
+            If this is the case, we redirect the user to the 404 page BUT the url in the browser will still be as entered, which we can use for loggin purposes.
+         */
+        if($_args){Redirect::to('404');}
+
+        /**
+         * Pass the data to the view
+         *
+         * We only send a page title and subtitle through. All of the content
+         * for this page is hard-coded in the view file for now.
+         *
+         * @var 	string 	View Path
+         * @var 	array 	Data being passed to the view
+         */
+	    $this->view(
+	        'home/index',
+	        [
+	            /*
+                    Pass the page title - will be shown at the top of the content and has the meta title in the <head> section, so will show on the browser tab.
+                */
+                'page_name' => 'UAT HUB',
+                /*
+                    Pass the page subtitle - this will be shown just below the page title. This is optional and can be ommited completely.
+                */
+                'page_subtitle' => 'Home page for the UAT area',
+	        ]
+	    );
+
+  	} // index()
+
+    /**
+     * Login page
+     *
+     * Contains the full login form along with information and help with
+     * login problems. This can be accessed via the 'Login Help' link the the
+     * menus but the user will also end up here upon a failed login attempt.
+     *
+     * Unlike the home page above, as well as passing the page title and subtitle
+     * to the view, we also pass in the login form as 'form'. It is easier to set
+     * this in here as we already have an open connection to model that holds it.
+     * Any processing of login attempts are done via the init.php file to allow
+     * logging in from any page.
+     *
+     * Again, we should not have any extra url parts when viewing the login page
+     * so if any exist, we throw a 404 error.
+     *
+     * @param   mixed    $_args     If not null, forces a 404
+     * @return 	         /app/views/home/login.php
+	 * @link 	         http://yoursite/Login
+     */
+    public function login($_args=null) {
+        // If we have parameters send to the 404 page
+        if($_args){Redirect::to('404');}
+
+        /*
+            Pass the required data through to the view
+
+            For now we are just passing a few counts of various sections
+        */
+        $this->view(
+            'home/login',
+            [
+                'page_name' => 'Login',
+                'page_subtitle' => 'Login to the site or get help if you are having trouble',
+                'form' => $this->_default_model->loginform($form_params=['hide_help'=>true])
+            ]
+        );
+
+    } // login()
+
+    /**
+     * Registration page
+     *
+     * Contains the registration form and checks for any registration attempts.
+     *
+     * This is far more complex than either of the other methods in this file as
+     * not only does it show the required data to the user but also handles any
+     * registration attempts, showing a message and adding validation classes to
+     * the form as well as redirecting a user away from the page if they are
+     * already logged in.
+     *
+     * Because this method powers several different versions of the page - initial,
+     * succesful post, unsuccesful post - each with their own page titles, we
+     * build up the second part of the view() function as we go along, as $_view_data
+     * and then pass that into the function at the end.
+     *
+     * Also, as we are passing it to a view that also powers other pages, we set
+     * a 'page_type' so the view knows which version we are on.
+     *
+     * @param   mixed    $_args     If not null, forces a 404
+     * @return 	         /app/views/home/users.php
+	 * @link 	         http://yoursite/Login
+     */
+    public function register($_args=null) {
+        // If we have parameters send to the 404 page
+        if($_args){Redirect::to('404');}
+
+        /*
+            As we may have different versions of the page, we set any parameters
+            that we know will not or are unlikely to change. We build upon or
+            amend this as we go along. 'page_name' is the same as we have used
+            before, but we also send 'page_type' as 'register'.
+            The view handles multiple pages so we use 'page_type' so it knows
+            which version we are on and, therefore, which output to show.
+         */
+        $_view_data = [
+            'page_name' => 'Register new account',
+            'page_type' => 'register',
+			'errors' => null,
+
+        ];
+
+        /*
+            If the user is already logged in, we redirect them to the home page.
+
+            The isLoggedIn () function in $this->_default_model ('M_Users.php') checks to see if a user $_SESSION exists and returns true or false. If true, we do not
+            need to show the registration page so we redirect them to the home page.
+
+            Again, we use Redirect::to() ('/app/core/Redirect.php') for this but use it in a slightly different way. Instead of a numbered reference, we actually use a physical path, in this case '/' to denote the home page. When using Redirect::to() like this, the redirect physically happens so the url will show 'http://yoursite/'.
+         */
+        if($this->_default_model->isLoggedIn()){Redirect::to('/');}
+
+        /*
+            At this point, there will have been no redirects so we do actually show the registration page. As we also handle registration attempts within the method, we first check to see if a registration attempt has been made.
+
+            If there has been, we attempt to process it, otherwise we just show the registration form.
+         */
+        if (Input::exists(['name'=>'register'])) {
+            /*
+                A registration attempt has been made so we need to take the $_POST data and attempt to validate it before we insert it.
+
+                We do not need to run validation against the name of the forms submit button so the first thing we do is unset that.
+             */
+            unset($_POST['register']);
+
+            /*
+                Now, all we have left is the actual data from the form fields, almost ready to validate. As there may be a future requiredment to preserve the original $_POST data, we create a variable called $_postdata and set $_POST to it.
+             */
+            $_postdata = $_POST;
+
+            /*
+                In the registration form, the 'Accept Terms' field is a checkbox. As a result, if it IS NOT checked, it will not show up in the posted data and therefore not validate correctly.
+
+                To prevent this, we overwrite $_postdata['terms'] with the value if it has been posted, else we create it with a value of '0' if it has not.
+             */
+            $_postdata['terms'] = (isset($_postdata['terms'])) ? $_postdata['terms'] : 0;
+
+
+            /*
+                We now run another function to unset unrequired validation rules to avoid them firing on unset fields. This is done via the stripValidateRules() function in '/src/functions/global.php', passing in the $_postdata along with a list of the validation rules, stored in the validation_rules() function in the default class.
+             */
+            $_rules = stripValidateRules (
+                $_postdata,
+                $this->_default_model->validation_rules()
+            );
+
+            /*
+                At this point, we have two variables that we are working with.
+
+                $_postdata containing only the form fields we want to validate
+                $_rules containing a list of validation rules only for the fields in $_postdata
+
+                We now check these against each other in the check() function of '/app/core/Validate.php'. We initially open a new instance of the validation class and set it to $validate to be able to access the function.
+
+                We then call the function, passing in the $_postdata and $_rules assigning anything that is returned to $validation. There are two functions now available to us
+                $validation->passed() will return a true or false as to whether the validation attempt has been successful
+                $validation->errors() will contain a list of errors if validation failed.
+
+             */
+            $validate = new Validate();
+            $validation = $validate->check(
+                $_postdata,
+                $_rules
+            );
+
+            /*
+                If validation has passed, we unset the 'confirm_password' and 'terms' from the $_postdata as they were only for validation purposes and do not get inserted into the database.
+                We then have to add the users status depending on which registration validation method is has ben set in the settings. If we are set to automatically verify, we set the 'status' to 1 and add it to $_postdata. For any other verification method (email or manual) we do not set anything as the users table in the database defaults 'status' to '0' if it does not exist.
+                We then attempt to register the user and create any messages that we need to show.
+
+                If validation has failed, we simply show a message showing what went wrong as well as the form with validation classes.
+             */
+             if ($validation->passed()) {
+                 // Validation passed so unset unrequired fields
+                 unset($_postdata['confirm_password']);
+                 unset($_postdata['terms']);
+
+                 // If we are on automatic verification, set the 'status' to 1
+                 if(Settings::members()['verification'] == 'auto' || isset($_args['auto_verify'])) {
+                     $_postdata['status'] = 1;
+                 }
+
+                 /*
+                    We now have everything that we need to insert the new user into the database. Again, this is done via a function in the default model - create(). This function returns a true or false depending on whether or not the insert is successful.
+
+                    If it is successful, we set a message based on the verification method, as well as changing the page title and passing the id of the new user.
+
+                    If it is not succesful, at this point it can only be an unspecified error so all we can do is show a message.
+                  */
+                 if($this->_default_model->create($_postdata)) {
+
+                     /*
+                        The insert has been succesful so we run a switch statement based on the verification method that has been set.
+
+
+                      */
+                     switch (Settings::members()['verification']) {
+                         case 'auto':
+                             $_view_data['message'] = $this->_default_model->messages('register_success_auto');
+                             break;
+                         case 'email':
+                             $_view_data['message'] = $this->_default_model->messages('register_success_email');
+                             break;
+                         case 'manual':
+                             $_view_data['message'] = $this->_default_model->messages('register_success_manual');
+                             break;
+                     }
+                     $_view_data['page_name'] = 'Registration Succesful';
+                     $_view_data['verification'] = Settings::members()['verification'];
+                     $_view_data['insert_id'] = $this->_default_model->_insertId;
+                     $this->_logs->register_success(
+                         $_view_data['insert_id']
+                     );
+
+                 } else {
+                     // The create was unsuccessful
+                     $_view_data['status'] = 'create_failed_unspecified';
+                 }
+             } else {
+                 // The validation failed so set the status and errors
+                 $_view_data['message'] = $this->_default_model->messages('register_validation');
+                 $_view_data['errors'] = $validation->errors();
+                 $this->_logs->register_fail(
+                     $_view_data['errors'],
+                     $_postdata
+                 );
+
+
+                 $_view_data['form'] = $this->_default_model->userForm([
+                     'errors' => $_view_data['errors'],
+                     'version' => 'create',
+                     'area' => 'user',
+                 ]);
+             }
+
+        } else {
+            // There has been no registration attempt so simply show the form
+            $_view_data['form'] = $this->_default_model->userForm([
+                'errors' => null,
+                'version' => 'create',
+                'area' => 'user',
+            ]);
+        } // If registration attempt
+
+        /**
+         * Pass the data to the view
+         * @var 	string 	View Path
+         * @var 	array 	Data being passed to the view
+         */
+        $this->view(
+            'home/users',
+            $_view_data
+        );
+
+    } // index()
+
+}
+
+
+
+
+
+
+
+
+
+===============================================================================
+
+
+
+
+
+
+
+
+
+
+<?php
+
+/**
+ * Redirect class
+ *
+ * Class file to url redirects
+ *
+ * One simple function - to() - that creates a header redirect
+ *
+ * @package Core
+ * @author  Steve Ball <steve@follyball.co.uk>
+ * @copyright Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
+ *
+ * TODO: Sort out the 404 etc
+ */
+
+// Include the initiation file
+require_once 'src/init.php';
+
+class Redirect
+{
+	/**
+	 * Create a header redirect
+	 * @param  string $location The required url path
+	 * @example Redirect::to('index.php')
+	 */
+    public static function to($location = '') {
+		// We only do anything if $location is set so check that
+        if ($location) {
+			/*
+				If $location is a numeric value, such as a 404, we need to
+				redirect that to a specified page relating to that number,
+				otherwise we just direct to $location.
+			 */
+            if (is_numeric($location)) {
+                switch ($location) {
+                    case 404:
+                        header('HTTP/1.0 404 Not Found');
+                        include '/app/views/errors/404.php';
+                        exit();
+                        break;
+
+                }
+            }
+            header('Location: ' . $location);
+            exit();
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
+
+=====================================================================================
+
+
+
+
+
+
+
+
+
+<?php
+
+/**
+ * Logs class
+ *
+ * Manages the activity logs. Still only a concept at the moment.
+ *
+ * Places details of updates in an 'activity' table in the database,
+ * along with any other relevant tables such as reasons for login
+ * failures.
+ *
+ * @package Core
+ * @author  Steve Ball <steve@follyball.co.uk>
+ * @copyright Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
+ *
+ */
+
+// Include the inititisation file
+require_once 'src/init.php';
+
+class Logs
+{
+	// Set any private variables
+    private static  $_instance = null,
+                    $db;
+    private         $_pdo,
+                    $_query,
+                    $_error = false,
+                    $_results,
+                    $_count = 0;
+
+	/**
+	 * Construct the database connection
+	 *
+	 *	Opens up a connection to the database and assigns it to
+	 *	$this->_pdo to make it re-usable.
+	 *
+	 * The connection parameters are called using Globals on values held
+	 * in /app/core/config_files/db.php
+	 *
+	 * @return 	Database connection
+	 */
+    public function __construct()
+	{
+        $db = DB::dbConnect();
+
+    } //__construct ()
+
+    private static function insert_activity ($params) {
+
+        $db = DB::dbConnect();
+        $db->insert(
+            'activity',
+            $params
+        );
+
+        return $db->insertId();
+    }
+
+
+    public static function insert_table_success ($params) {
+        $params['type'] = 1;
+        $params['status'] = 'p';
+        $params['user'] = Session::get(Settings::members()['login_session']);
+        $params['stamp'] = date('Y-m-d H:i:s');
+
+        self::insert_activity ($params);
+    }
+
+    public function insert_table_fail ($params, $errors, $post) {
+        $params['type'] = 1;
+        $params['status'] = 'f';
+        $params['user'] = Session::get(Settings::members()['login_session']);
+        $params['stamp'] = date('Y-m-d H:i:s');
+
+        $id = self::insert_activity ($params);
+
+        $_data = [];
+        foreach ($errors as $key => $value) {
+            $_data[$key] = $post[$key];
+            if (empty($_data[$key])) {
+                $_data[$key] = 'null';
+            } else {
+                $_data[$key] = $value;
+            }
+        }
+
+        foreach ($_data as $key => $value) {
+            $data[] = [
+                $id, $key,$value
+            ];
+        }
+
+
+        $values = array();
+        foreach($data as $key => $value){
+          $_value = "(".$value[0].",'".$value[1]."','".$value[2]."')";
+          array_push($values,$_value);
+        }
+        $values_ = implode(",",$values);
+
+        $sql = 'INSERT INTO `activity_table_updates`(`ref`, `field`, `value`) VALUES ' . $values_;
+
+        $db = DB::dbConnect();
+
+        $db->query($sql);
+    //    nicePrint_r($_data);
+    }
+
+    private function insert_failed_register ($data, $id) {
+
+        foreach ($data as $key => $value) {
+            $_data[] = [
+                $id, $key,$value
+            ];
+        }
+
+
+
+        $values = array();
+        foreach($_data as $key => $value){
+          $_value = "(".$value[0].",'".$value[1]."','".$value[2]."')";
+          array_push($values,$_value);
+        }
+        $values_ = implode(",",$values);
+
+        $sql = 'INSERT INTO `activity_failed_registrations`(`ref`, `field`, `value`) VALUES ' . $values_;
+        $db = DB::dbConnect();
+
+        $db->query($sql);
+    }
+
+    private function insert_failed_login ($data) {
+
+        $db = DB::dbConnect();
+        $db->insert(
+            'activity_failed_logins',
+            $data
+        );
+    }
+
+
+    public static function register_success ($id) {
+        $params['type'] = 6;
+        $params['status'] = 'p';
+        $params['user'] = $id;
+        $params['area'] = 'f';
+        $params['stamp'] = date('Y-m-d H:i:s');
+
+        self::insert_activity ($params);
+    }
+
+
+    public static function register_fail ($errors, $post) {
+        // TODO: put password length and username lengths in settings
+        nicePrint_r($errors, 'Errors');
+        nicePrint_r($post, 'Post');
+
+        $_data = [];
+        foreach ($errors as $key => $value) {
+            $_data[$key] = $post[$key];
+
+            if (empty($_data[$key])) {
+                $_data[$key] = 'null';
+            } else if ($key == 'password' || $key == 'confirm_password') {
+                if(strlen($_data[$key]) < 6){
+                    $_data[$key] = 'min_length';
+                } else {
+                    if ($key == 'confirm_password') {
+                        $_data[$key] = 'no_match';
+                    }
+                }
+            } else if ($key == 'username') {
+                if($value == 'Username already exists') {
+                    $_data[$key] = 'exists';
+                } else if (strlen($_data[$key]) < 6){
+                    $_data[$key] = 'min_length';
+                } else if (strlen($_data[$key]) > 20){
+                    $_data[$key] = 'max_length';
+                } else {
+                    $_data[$key] = 'preg_match';
+                }
+            } else if ($key == 'email') {
+                if($value == 'Email already exists') {
+                    $_data[$key] = 'exists';
+                } else {
+                    $_data[$key] = 'preg_match';
+                }
+            }
+
+
+        }
+
+        $params['type'] = 6;
+        $params['status'] = 'f';
+        $params['area'] = 'f';
+        $params['stamp'] = date('Y-m-d H:i:s');
+
+        $id = self::insert_activity ($params);
+
+        self::insert_failed_register ($_data, $id);
+    }
+
+
+    public static function login_fail ($data) {
+        $params['type'] = 4;
+        $params['status'] = 'f';
+        $params['area'] = '0';
+        $params['stamp'] = date('Y-m-d H:i:s');
+
+        $id = self::insert_activity ($params);
+
+        $data['ref'] = $id;
+
+        self::insert_failed_login ($data);
+    }
+
+    public static function login_success () {
+        $params['type'] = 4;
+        $params['status'] = 'p';
+        $params['user'] = Session::get(Settings::members()['login_session']);
+        $params['area'] = '0';
+        $params['stamp'] = date('Y-m-d H:i:s');
+
+        self::insert_activity ($params);
+    }
+
+    public static function logout_success () {
+        $params['type'] = 5;
+        $params['user'] = Session::get(Settings::members()['login_session']);
+        $params['area'] = '0';
+        $params['stamp'] = date('Y-m-d H:i:s');
+
+        self::insert_activity ($params);
+    }
+
+}
+
+
+
+
+
+
+
+
+
+
+=====================================================================================
+
+
+
+
+
+
+
+
+
+<?php
+
+/**
+ * Database class
+ *
+ * Controls all database CRUD functions as well as opening up an instance
+ * of this class.
+ *
+ * @package Core
+ * @author  Steve Ball <steve@follyball.co.uk>
+ * @copyright Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
+ *
+ */
+
+// Include the inititisation file
+require_once 'src/init.php';
+
+class DB
+{
+	// Set any private variables
+    private static $_instance = null;
+    private $_pdo,
+            $_query,
+            $_error = false,
+            $_results,
+            $_count = 0;
+
+	/**
+	 * Construct the database connection
+	 *
+	 *	Opens up a connection to the database and assigns it to
+	 *	$this->_pdo to make it re-usable.
+	 *
+	 * The connection parameters are called using Globals on values held
+	 * in /app/core/config_files/db.php
+	 *
+	 * @return 	Database connection
+	 */
+    private function __construct()
+	{
+        $db = Settings::db();
+
+        try
+		{
+            $this->_pdo = new PDO('mysql:host=' . $db['host'] . ';dbname=' . $db['dbname'],  $db['username'], $db['password']);
+
+        } catch(PDOException $e) {
+            die($e->getMessage());
+        }
+    } //__construct ()
+
+	/**
+	 * Create a new Database instance
+	 *
+	 * Creates a new instance of the database class that can be assigned to a
+	 * variable and re-used.
+	 *
+	 * @return Database connection
+	 * @example $this->db = DB::dbConnect();
+	 */
+    public static function dbConnect()
+	{
+		// If an instance has not already been set, set it
+        if(!isset(self::$_instance)) {
+            self::$_instance = new DB();
+        }
+		// Return the instance
+        return self::$_instance;
+    } // dbConnect()
+
+	/**
+	 * Perform a query on an SQL statement
+	 *
+	 * All of the variables created are private so cannot be called
+	 * externally, but each has it's own public function.
+	 *
+	 * If you are using parameters, you need to replace the position where
+	 * their values would be with ?
+	 *
+	 * self::db()->query("SELECT * FROM user_hash WHERE email = ? AND hash = ?", array($email, $hash));
+	 *
+	 * @param  string 	$sql    SQL statement
+	 * @param  array  	$params Paremeters to add to the string
+	 * @return array         	Query results, errors and count
+	 */
+    public function query ($sql, $params = array()) {
+		// Set error to false by default
+        $this->error = false;
+
+		/*
+			We attempt to prepare the query and if it is succesful,
+			we bind the parameters and execute it.
+		 */
+        if ($this->_query = $this->_pdo->prepare($sql))
+		{
+			/*
+				The query is prepared so we have to check to see if
+				there are any parameters.
+
+				If there are we loop through them annd then bind them
+				to the query
+			 */
+
+			// Set the counter to one
+            $x = 1;
+
+			// Check to see if there are any parameters
+            if(count($params))
+			{
+				/*
+					There are parameters so we loop through them and
+					bind each
+				 */
+                foreach($params as $param) {
+					// Bind the parameter with it's counter position
+                    $this->_query->bindValue($x, $param);
+
+					// Increment the counter
+                    $x++;
+                }
+            }
+
+
+			/*
+				Now that the parameters have been bound, we try to execute
+				the query.
+				If succesful we set the results and row count, otherwise we
+				set the error.
+			 */
+            if($this->_query->execute())
+			{
+				// The query executed succesfully so set the results and count
+                $this->_results = $this->_query->fetchAll(PDO::FETCH_OBJ);
+                $this->_count = $this->_query->rowCount();
+            } else
+			{
+				// The query failed so set error to true
+                $this->_error = true;
+            }
+        } // prepare
+
+		// Return anything that has been set as a result of the wquery attempt
+        return $this;
+
+    } // query ()
+
+
+	/**
+	 * Perfom a simple action on a table
+	 *
+	 * Allows you to perform a quick SELECT or DELETE on a table when
+	 * only one parameter needs to be set.
+	 *
+	 * @param  string $action SELECT/DELETE
+	 * @param  string $table  The name of the table
+	 * @param  array  $where  An array of parameters - field, operator, value
+	 * @return array          The output from the query() function in this class
+	 */
+    public function action ($action, $table, $where = array())
+	{
+		/*
+			A $where array MUST contain exactly three paramenters for this to
+			work so the first thing to do is check that.
+
+		 */
+        if (count($where) === 3)
+		{
+			// There are three parameters so set the available operators
+            $operators = array('=', '>', '<', '>=', '<=');
+
+			/*
+				As the $where array is set as field, operator, value we can easily set them to named variables
+			 */
+            $field = $where[0];
+            $operator = $where[1];
+            $value = $where[2];
+
+			/*
+				The next check is to make sure that the supplied operator is
+				one of the ones set in $operators
+			 */
+            if (in_array($operator, $operators))
+			{
+				// The operator matches so create the SQL statement
+                $sql = "{$action} FROM {$table} WHERE {$field} {$operator} ?";
+
+				// Try to execute the query using the query() function.
+                if(!$this->query($sql, array($value))->error()) {
+
+					// Return anything returned from the query
+                    return $this;
+                }
+            } // Operator check
+        }// count check
+
+        return false;
+    } // action ()
+
+	/**
+	 * Perform a quick select on a table
+	 *
+	 * @param  	string 	$table 	Table name
+	 * @param  	array  $where  An array of parameters - field, operator, value
+	 * @return 	Query results
+	 * @example get('users', array('joined', '>', '2017-01-01'))
+	 */
+    public function get ($table, $where)
+	{
+        return $this->action('SELECT *', $table, $where);
+    } // get ()
+
+	/**
+	 * Perform a quick delete on a table
+	 *
+	 * @param  	string 	$table 	Table name
+	 * @param  	array  $where  An array of parameters - field, operator, value
+	 * @return 	Query results
+	 * @example delete('users', array('joined', '>', '2017-01-01'))
+	 */
+    public function delete ($table, $where)
+	{
+        return $this->action('DELETE', $table, $where);
+    } // delete ()
+
+
+	/**
+	 * Insert a row into a table
+	 *
+	 * @param  	string 	$table 	Table name
+	 * @param  	array  	$fields An array of table fields and values
+	 * @return 	Query results
+	 * @example insert('users', array('username' => 'SteveB', 'active' => '1'))
+	 */
+    public function insert ($table, $fields = array())
+	{
+		/*
+			The $fields array will have a $key => $value pairing for
+			each field having data inserted. The $key will matche the
+			table field name and the $value will be the value to insert.
+
+			We use array_keys extract the keys from the $fields array
+			and assigned them to $keys.
+		 */
+        $keys = array_keys($fields);
+
+		// Create a default $values variable
+        $values = '';
+
+		// Set the counter to 1
+        $x = 1;
+
+		/*
+			Loop through the fields and for each one, create a ? to
+			place in the fields section of the insert statement
+		 */
+        foreach($fields as $field)
+		{
+			// Add a placeholder to $values
+            $values .= '?';
+
+			// If we are not on the last pairing, add a comma to $values
+            if ($x < count($fields))
+			{
+                $values .= ', ';
+            }
+
+			// Increment the counter
+            $x++;
+        } // foreach
+
+		/*
+			We now have all the information to build the SQL statement by
+			inserting the passed table as well as the fields and values.
+
+			Using the example at the top of this function, the statement would be
+			INSERT INTO `users` (`username`, `active`) VALUES (?, ?)
+
+			We then pass the statement into the query() function
+		 */
+        $sql = "INSERT INTO `{$table}` (`" . implode('`,`', $keys) . "`) VALUES ({$values})";
+
+		// Try to execute the query using the query() function.
+        if (!$this->query($sql,$fields)->error())
+		{
+			// Return anything returned from the query
+			return true;
+        }
+
+        return false;
+
+    } // insert()
+
+
+	/**
+	 * Update a row in a table
+	 *
+	 * @param  	string 	$table 	Table name
+	 * @param   int 	$id     The id of the row to update
+	 * @param  	array  	$fields An array of table fields and values
+	 * @return 	Query results
+	 * @example update('users', 1, array('username' => 'SteveBNew', 'active' => '0'))
+	 */
+    public function update ($table, $id, $fields = array())
+	{
+		// Create a default $set variable to hold the values and fields
+        $set = '';
+
+		// Set the counter to 1
+        $x = 1;
+
+		/*
+			Loop through the fields and for each one, create an x=? to
+			place in the values section of the update statement
+		 */
+        foreach ($fields as $name => $value)
+		{
+			// Add a field = ?
+            $set .= "`{$name}` = ?";
+
+			// If we are not on the last pairing, add a comma to $set
+            if ($x < count($fields)) {
+                $set .= ', ';
+            }
+
+			// Increment the counter
+            $x++;
+        } // foreach
+
+
+		/*
+			We now have all the information to build the SQL statement by
+			inserting the passed table as well as the values in $set.
+
+			Using the example at the top of this function, the statement would be
+			UPDATE `users` SET `username`='SteveBNew',`active`='0' WHERE id=1
+
+			We then pass the statement into the query() function
+		 */
+        $sql = "UPDATE `{$table}` SET {$set} WHERE id = {$id}";
+
+		// Try to execute the query using the query() function.
+        if (!$this->query($sql,$fields)->error())
+		{
+			// Return anything returned from the query
+			return true;
+        }
+
+        return false;
+
+    } // update ()
+
+	//////////////////////////////////////////////////
+	// Public functions to call private variables  //
+	//////////////////////////////////////////////////
+
+	// Allow a single row of results data to be called publically
+    public function first ()
+	{
+        return $this->results()[0];
+    }
+
+	// Allow a results set data to be called publically
+    public function results ()
+	{
+        return $this->_results;
+    }
+
+	// Return a row count
+    public function count ()
+	{
+        return $this->_count;
+    }
+
+	// Return an error
+    public function error ()
+	{
+        return $this->_error;
+    }
+
+     //  Get the id of the last inserted row
+    public function insertId () {
+       return $this->_pdo->lastInsertId();
+    } // insertId ()
+
+}
+
+
+
+
+
+
+
+
+
+
+=======================================================================================
+
+
+
+
+
+
+
+
+
+<?php
+
+/**
+ * Settings Model
+ *
+ * Two different types. If you frequesntly need to take only one element
+ * out of a function then the path is put in. If not we will simply set the
+ * function to a variable and take the required path from there.
+ *
+ * REMOVE ALL $path requirements
+ * You can get a single element from any function with...
+ * Settings::members()['verification']
+ *
+ * @package Core
+ * @author  Steve Ball <steve@follyball.co.uk>
+ * @copyright Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
+ *
+ * TODO: Sort out the 404 etc
+ */
+
+// Include the initiation file
+require_once 'src/init.php';
+
+class Settings
+{
+    public static function current_datetime ()
+    {
+        return new DateTime();
+    }
+
+    public static function db ()
+    {
+        return [
+            // The database host. Usually 'localhost' or '127.0.0.1'
+            'host' => 'localhost',
+            // The Username for the database
+            'username' => 'root',
+            // The Password for the database
+            'password' => 'notyou',
+            // The Name of the database
+            'dbname' => 'hub',
+        ];
+    }
+
+    public static function members ()
+    {
+        return [
+            'login_session' => 'uid',
+            'user_cookie' => 'user',
+            'cookie_expiry' => 604800,
+            'verification' => 'manual',// auto/manual/email
+            'user_login_group' => 'userGroup'
+
+        ];
+    }
+
+    public static function site_details ($path)
+    {
+        $array = array (
+            'site_name' => 'Php Framework',
+            'home_page' => 'http://framework/',
+            'admin_email' => 'srball72@gmail.com',
+            'debug_mode' => true,
+        );
+
+        return self::set_path($array, $path);
+    }
+
+    /**
+     * Meta Tags
+     *
+     * Returns an array of meta tags as a $key=>$value pairing
+     * where the key is the 'name' and the value is the 'content'.
+     *
+     * These get processed in a foreach loop in the head() function
+     * in the base template (by default /app/core/Templates/Base.php).
+     *
+     * @return  array   Key/Value pairing
+     */
+    public static function meta_tags ()
+    {
+        return [
+            'description' => 'Enter a description',
+            'author' => 'Your Name',
+            'viewport' => 'width=device-width, initial-scale=1, shrink-to-fit=no',
+            'keyword' => 'Bootstrap,Admin,Template,PHP,MVC,Framework,jQuery,CSS,HTML,Dashboard'
+        ];
+    }
+
+    public static function registration_terms ()
+    {
+        // Default terms taken from https://www.nibusinessinfo.co.uk/content/sample-website-terms-and-conditions-use
+        // Change this to suit your needs.
+        return '<h3>Terms and conditions</h3>
+
+                <p>Welcome to our website. If you continue to browse and use this website, you are agreeing to comply with and be bound by the following terms and conditions of use, which together with our privacy policy govern '.self::site_details ('site_name').'\'s relationship with you in relation to this website. If you disagree with any part of these terms and conditions, please do not use our website.</p>
+
+                <p>The term '.self::site_details ('site_name').' or \'us\' or \'we\' refers to the owner of the website whose registered office is [address]. Our company registration number is [company registration number and place of registration]. The term \'you\' refers to the user or viewer of our website.</p>
+
+                <p>The use of this website is subject to the following terms of use:</p>
+
+                <ul>
+                    <li>The content of the pages of this website is for your general information and use only. It is subject to change without notice.</li>
+                	<li>This website uses cookies to monitor browsing preferences. If you do allow cookies to be used, the following personal information may be stored by us for use by third parties: [insert list of information].</li>
+                	<li>Neither we nor any third parties provide any warranty or guarantee as to the accuracy, timeliness, performance, completeness or suitability of the information and materials found or offered on this website for any particular purpose. You acknowledge that such information and materials may contain inaccuracies or errors and we expressly exclude liability for any such inaccuracies or errors to the fullest extent permitted by law.</li>
+                	<li>Your use of any information or materials on this website is entirely at your own risk, for which we shall not be liable. It shall be your own responsibility to ensure that any products, services or information available through this website meet your specific requirements.</li>
+                	<li>This website contains material which is owned by or licensed to us. This material includes, but is not limited to, the design, layout, look, appearance and graphics. Reproduction is prohibited other than in accordance with the copyright notice, which forms part of these terms and conditions.</li>
+                	<li>All trade marks reproduced in this website which are not the property of, or licensed to, the operator are acknowledged on the website.</li>
+                	<li>Unauthorised use of this website may give rise to a claim for damages and/or be a criminal offence.</li>
+                	<li>From time to time this website may also include links to other websites. These links are provided for your convenience to provide further information. They do not signify that we endorse the website(s). We have no responsibility for the content of the linked website(s).</li>
+                	<li>Your use of this website and any dispute arising out of such use of the website is subject to the laws of England, Northern Ireland, Scotland and Wales.</li>
+                </ul>';
+    }
+
+    /**
+     * An array of the available css stylesheets that can be used.
+     *
+     * To use any of the stylesheets we simply pass in the path to it, delimited
+     * by '/'. Another function in this file, set_path(), is used to translate the
+     * path provided into the array part we need.
+     *
+     * SiteSettings::css('local/site') will return
+     * '<link rel="stylesheet" href="/includes/css/site.css">'
+     *
+     * SiteSettings::css('remote/bootstrap/v4') will return
+     * '<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">'
+     *
+     * @param   string    $path   Delimited path to the require stylesheet.
+     * @return  string    CSS stylesheet
+     **/
+    public static function css ($path) {
+        $array = [
+            'local' => [
+                // Main Site Styles
+                'site' => '<link rel="stylesheet" href="/includes/css/site.css">',
+                'admin' => '<link rel="stylesheet" href="/includes/css/admin.css">',
+            ],
+            'remote' => [
+                // Font Awesome
+                'font-awesome' => '<link href="https://maxcdn.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css" rel="stylesheet" integrity="sha384-wvfXpqpZZVQGK6TAh5PVlGOfQNHSoD2xbE+QkPxCAFlNEevoEH3Sl0sibVcOQVnN" crossorigin="anonymous">',
+
+        		// Simple Line Icons
+                'simple-line-icons' => '<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/simple-line-icons/2.4.1/css/simple-line-icons.css" />',
+
+        		/*
+        			Bootstrap
+        			We have both versions 3 and 4 just in case 3 is still needed
+        		 */
+                'bootstrap' => [
+        			// Version 3.3.7
+                    'v3' => '<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">',
+
+                    // Version 4 beta 3
+                    'v4_beta' => '<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-beta.3/css/bootstrap.min.css" integrity="sha384-Zug+QiDoJOrZ5t4lssLdxGhVrurbmBWopoEl+M6BdEfwnCJZtKxi1KgxUyJq13dy" crossorigin="anonymous">',
+
+                    'v4' => '<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">',
+
+                ]
+            ]
+        ];
+
+        // Return the correct stylesheet using the set_path() function.
+        return self::set_path($array, $path);
+
+    } // css ()
+
+    public static function js ($path) {
+        $array = [
+            'local' => [
+                // Main Site Styles
+                'default' => '<script src="default.js"></script>',
+            ],
+            'remote' => [
+                // JQuery
+        		'jquery' => '<script src="https://code.jquery.com/jquery-3.1.1.js" integrity="sha256-16cdPddA6VdVInumRGo6IbivbERE8p7CQR3HzTBuELA=" crossorigin="anonymous"></script>',
+                'jquery_ui' => '<script src="https://code.jquery.com/ui/1.12.1/jquery-ui.js" integrity="sha256-T0Vest3yCU7pafRw9r+settMBX6JkKN06dqBnpQ8d30=" crossorigin="anonymous"></script>',
+                'font-awesome-5' => '<script defer src="https://use.fontawesome.com/releases/v5.0.4/js/all.js"></script>',
+
+                /*
+                    Bootstrap
+                    We have both versions 3 and 4 just in case 3 is still needed
+                 */
+                'bootstrap' => [
+                    // Version 3.3.7
+                    'v3' => '<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js" integrity="sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa" crossorigin="anonymous"></script>',
+
+                    // Version 4
+                    'v4' => '<script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>',
+                ],
+                'popper' => '<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>',
+
+                'ckeditor' => '<script src="https://cdn.ckeditor.com/4.8.0/standard/ckeditor.js"></script>'
+            ]
+        ];
+
+        return self::set_path($array, $path);
+
+    } // js
+
+    /**
+     * Return an array element based on a supllied path.
+     *
+     * Takes a delimited path and and returns the element it matches from the
+     * specified array. It does this by exploding the supplied path and then
+     * using the bits to drill down through the array.
+     *
+     * If you had an array of
+     * [
+     *      'web_sites' => [
+     *          'search_engines' => [
+     *              'google' => 'google.com',
+     *              'bing' => 'bing.com',
+     *              'yahoo' => 'yahoo.com',
+     *          ],
+     *          'email' => [
+     *              'gmail' => 'gmail.com',
+     *              'outlook' => 'outlook.com',
+     *              'yahoo' => 'mail.yahoo.com',
+     *          ]
+     *      ]
+     * ]
+     * and a path of 'web_sites/email/outlook', the returned result would
+     * be 'outlook.com'.
+     *
+     * @param   array  $array   The arrray to read from
+     * @param   string $path    The delimited path to the stylesheet in the array.
+     **/
+    private static function set_path ($array, $path) {
+        /*
+            Explode $path using '/' as the delimiter and rewrite it back to itself.
+
+            This will now contain and array of each element of the path.
+         */
+        $path = explode('/', $path);
+
+        /*
+            We want the end result to be stored as a variable called $result, so
+            we start off by setting the first element of $path to it, before that is unset.
+         */
+        $result = $array[$path[0]];
+        unset($path[0]);
+
+        /*
+            Using our example above, at this point all we have done is moved inside the 'web_sites' key and unset that part from our array, meaning we still have 'email' and 'outlook' to deal with.
+
+            We loop through these and, assuming they exist, add them to $result and unset the so we will end up with the final item we need returning.
+
+            So we already have $result = $array['web_sites']
+
+            On the first loop we would have $result = $array['web_sites']['email']
+
+            On the second (and in this case final) loop we would have $result = $array['web_sites']['email']['outlook']
+
+            Once $path has been looped through, we return whatever is stored in result at the time so in the example it would be 'outlook.com'
+        */
+        foreach ($path as $bit) {
+            // Check if this $path part matches a value in the array
+            if(isset($result[$bit])) {
+
+                // If the $path part matches, append it to our existing $result
+                $result = $result[$bit];
+            }
+        } // foreach $path
+
+        // Return whatever value is stored in $result
+        return $result;
+    } // set_path()
+}
+
+
+
+
+
+
+
+
+
+
+======================================================================================
+
+
+
+
+
+
+
+
+
+
+<?php
+
+/**
+ * Settings Model
+ *
+ * Two different types. If you frequesntly need to take only one element
+ * out of a function then the path is put in. If not we will simply set the
+ * function to a variable and take the required path from there.
+ *
+ * REMOVE ALL $path requirements
+ * You can get a single element from any function with...
+ * Settings::members()['verification']
+ *
+ * @package Core
+ * @author  Steve Ball <steve@follyball.co.uk>
+ * @copyright Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
+ *
+ * TODO: Sort out the 404 etc
+ */
+
+// Include the initiation file
+require_once 'src/init.php';
+
+class Messages
+{
+
+    public static function alert ($params) {
+        nicePrint_r($params, 'alert()');
+        $alert_content = [
+            'heading' => 'Errors',
+            'content' => 'Please correct the following errors..<br>{{errors}}',
+            'dismissible' => true,
+            'alert_color' => 'danger',
+            'class' => 'mb-4'
+        ];
+
+        if(isset($params['title'])) {
+            if ($params['title']) {
+                $alert_content['heading'] = $params['title'];
+            }
+        }
+
+        if(isset($params['content'])) {
+            if(is_array($params['content'])) {
+
+                $alert_content['content'] = '';
+                foreach ($params['content'] as $value) {
+                    $alert_content['content'] .= Php2Html::p([
+                        'content' => $value
+                    ]);
+                }
+            } else {
+                $alert_content['content'] = Php2Html::p([
+                    'content' => $params['content']
+                ]);
+            }
+        }
+
+        if(isset($params['alert_color'])) {
+            $alert_content['color'] = $params['alert_color'];
+        }
+
+
+        if(isset($params['errors'])) {
+            $alert_content['content'] .=  Php2Html::p([
+                'content' => $params['errors']
+            ]);
+        }
+
+        if(isset($params['insert_id']) && $params['insert_id']) {
+            $alert_content['content'] .=  Php2Html::p([
+                'content' => 'The id of the new record is ' . $params['insert_id'] . '.'
+            ]);
+        }
+
+        if(isset($params['dismissible'])) {
+            $alert_content['dismissible'] = $params['dismissible'];
+        }
+
+
+
+            return Php2Bs::bs_alert(
+                $alert_content
+            );
+
+    }
+
+}
+
+
+
+
+
+
+
+
+
+
+=====================================================================================
+
+
+
+
+
+
+
+
+
+<?php
+
+/**
+ * Main Template
+ *
+ * The front end template is built using two files. This one deals with any of the
+ * page-specific content but it exends '/app/core/Templates/T_Base.php', which
+ * contains any shared content such as the nav bar and footer.
+ *
+ * As everything is done within the __construct() we only ever need to call the
+ * class itself and no functions, so look at that for a full explanation of the process.
+ *
+ * We call the template from a view and pass in two arguments. The first is the
+ * main content to show for the page  while the second is an array of other page
+ * settings such as the page title and required layout specifics.
+ *
+ * The following can be passed in as part of the array for the second argument.
+ * 'page_title'     - Sets the title to be shown at the top of the page and in <head>
+ * 'page_subtitle'  - Sets a subtitle to be showm just below the title at the top of the page
+ * 'layout'         - Sets the layout type. We can add unlimited layouts within the laoyout function in this file.
+ * 'meta'           - Adds extra, page-specific, meta tags to <head>
+ * 'css'            - An array of page-specific css styles
+ * 'js'             - An array of page-specific js scripts
+ * 'sidebar'        - Sets the function to be called when using a layout with a sidebar.
+ * 'hide_banner     - Allows you to hide the banner at the top of the page.
+ * 'body_class'     - Sets any global styles for the whole page.
+ *
+ * All of these are described in full in '/app/views/home/index.php', where there
+ * is a full example of how to build the template from within a view.
+ *
+ * @package 	Core
+ * @author  	Steve Ball <steve@follyball.co.uk>
+ * @copyright 	Copyright (c) 2018 Steve Ball <steve@follyball.co.uk>
+ * @example 	new T_Main($content, $args)
+ * @return 		string     Entire HTML page
+ */
+class T_Main extends T_Base {
+
+	/**
+	 * Construct the Page
+	 *
+	 * The entire page is built as soon as it is called so we set everything
+	 * we need in the __construct and at the end of it, called the Template() function
+     * to create the whole page on the fly.
+	 *
+	 * @param string 		$content       Page Content
+	 * @param array        	$args          Additional arguments
+	 */
+    public function __construct($content, $args=array()) {
+
+		// Set the displayed content to $this->content
+        /*
+            As this is a class file that relies on some of the functions within itself, we set whatever we can to $this to allow it to be called from anywhere.
+
+            $content will always be a string of the innermost content, ready formatted, and should never need any manipulation from within this file, other than adding a couple of bits where necessary (seuch as breadcrumbs). With that in mind, we set it to $this->content before we do anything else.
+         */
+		$this->content = $content;
+
+		/*
+            Next we work through the second arugument - $args. This will be an array and we check for each part that may exist individually, adding them to $this where required.
+
+            We start of with the page title and subtitle, to show above the content.
+
+            If a 'page_title' has been passed set it to $this->page_title, otherwise set it to null.
+
+            Do the same with 'page_subtitle', setting it to $this->page_subtitle, if required.
+
+            These variables get checked in the content() function and then added to the content as required.
+
+            Note that if $this->page_title is null, $this->page_subtitle WILL NOT show, even if it has been set.
+         */
+		$this->page_title = (isset($args['page_title'])) ? $args['page_title'] : null;
+        $this->page_subtitle = (isset($args['page_subtitle'])) ? $args['page_subtitle'] : null;
+
+		/*
+           Set the layout version
+
+           If a layout has been passed from the view via $args['layout'] set $this->layout to it otherwise use 'default'.
+
+           These variables get checked in the layout() function within this file and will return a layout based on that is set here. The comments around the layout() function explains which layouts are available to use and how to add new ones..
+		 */
+        if(isset($args['layout'])) {
+            $this->layout = $args['layout'];
+        } else {
+            $this->layout = 'default';
+        }
+
+        /*
+            Set any page specific meta tags. These will be set in the view as a key/value pairing and will override the defaults set in /app/core/Settings.php->meta_tags()
+         */
+        if(isset($args['meta'])) {$this->meta = $args['meta'];}
+
+        /*
+            Set any page specific css. These will be set in the view as an array of path strings.
+
+            We set the available css files into an array in SiteSettings.php in a static function called css(). This allows us to pass in a reference to return the correct css file.
+
+         */
+        if(isset($args['css'])) {$this->css =$args['css'];}
+
+        /*
+            Set any page specific js. These works exactly the same as the css one above other than it returns a js script from the js() function in SiteSettings.php.
+         */
+        if(isset($args['js'])) {$this->js =$args['js'];}
+
+        /*
+            On layouts that have sidebars, we can specifiy what is shown in it via $args['sidebar'].
+
+            Each sidebar will have its own function within this file and all of these will end with '_sidebar', so to include the users_sidebar() function, we simply pass in $args['sidebar']='user'.
+
+            If no sidebar is specified, it will use the default_sidebar() function.
+
+            An example is shown in the right_Column() function.
+         */
+        $this->sidebar = (isset($args['sidebar'])) ? $args['sidebar'].'_sidebar' : 'default_sidebar';
+
+        /*
+            We also have the option to hide the top banner from the page, which we do by passing in $args['hide_banner'] = true. If it is false or not set, the banner will be show.
+
+            This is used in '/app/views/home/index.php' where the nav bar now shows at the very top of the page.
+         */
+        $this->show_banner = (isset($args['hide_banner']) && $args['hide_banner']) ? false : true;
+
+        /*
+            We can also set a class for the entire body using $args['body_class'].
+
+            Again, this is used in '/app/views/home/index.php' to give the whole page a dark background and light text.
+         */
+        $this->body_class = (isset($args['body_class'])) ? $args['body_class'] : 'bg-light';
+
+        /*
+            We have now set everything we require to $this so it can be used anywhere within the class so can build the template.
+
+            We do this by calling the Template() function (right below the end of this function), which calls all of the functions required and then returns the entire page display.
+         */
+        self::Template();
+
+    } // __construct
+
+
+	/**
+	 * Build the entire template
+	 *
+	 * We build this up gradually via functions contained either in this file or
+     * in the T_Base file it extends. It simple calls the required functions,
+     * each of which echo out a specific part of the page.
+     *
+	 * @return 	HTML page
+	 */
+    private function Template () {
+		/*
+            Create the <!doctype> and <head> sections, along with the opening <html> and <body> tags.
+
+            Stored in T_Base.
+         */
+        self::bodyStart ();
+
+        // Build banner
+        if($this->show_banner) {
+            self::banner ();
+        }
+
+
+        // Build top navigation bar
+        self::topNav ();
+
+		// Show the actual content for the page
+        self::content ();
+
+		// Show the footer
+        self::footer ();
+
+		// Show any requested scripts and close of the <body> and <html> tags
+        self::bodyEnd ();
+
+    } // Template()
+
+    /**
+     * Page banner
+     *
+     * Simply creates the banner that shows at the top of the page.
+     *
+     * Theoretically, this could be placed in the T_Base file but, if you are
+     * running multiple sites based around the same template, having it in the
+     * specific template files means it can be styled independently.
+     *
+     * The output of this is a fluid bootstrap container (to force it full width
+     * ensuring any background colour stretches across the screen), inside which
+     * we place a standard container so the content matches the width of the rest
+     * of the page. Inside that inner container, we place a <h1> with the title.
+     *
+     * To simplify the construction, we build them individually, innermost first,
+     * and pass each into it's parent.
+     *
+     * @return string 					Banner
+     */
+    public function banner () {
+
+        // Build the H! tag as $title
+        $title = Php2Html::h ([
+            'size' => '1',
+            'class' => 'title',
+            'content' => 'Main Template',
+        ]); // $title
+
+        // Build the inner container as $inner_container, passing in $title as the content
+        $inner_container = Php2Bs::bs_container ([
+            'content' => $title
+        ]); // $inner_container
+
+        // Echo out the outer container, passing in $inner_container as the content and include some formatting
+        echo Php2Bs::bs_container ([
+            'container_type' => 'fluid',
+            'class' => 'bg-info text-light pb-2',
+            'content' => $inner_container
+        ]); // container
+
+    } // banner()
+
+	/**
+	 * Show the actual page content
+	 *
+	 * We show the actual content of the page using a pre-defined layout that has
+     * either been set when calling the template from the view or as a default.
+	 *
+	 * This function returns the entire content, aside from the wrapper created with
+     * the base file this extends and the content is built before being passed into a
+     * 'bs_container' function from the Php2Bs (Bootstrap) class to create the entire
+     * content area.
+	 *
+	 * @return     string  	   Page content
+	 */
+    private function content () {
+        // Create an empty content tag
+        $content = '';
+
+        /*
+            Set the page title and subtitle
+
+            If a page title has been set in the view using the
+            $args['page_title'] parameter it will have been set to
+            $this->page_title in the __construct and will be the first
+            thing that we add to $content.
+            The entire title area (including the subtitle if required, set to
+            $this->page_subtitle from $args['page_subtitle']) is shown in a
+            div with a class of 'page_title' so we build what is required
+            against a $variable of $title and then pass it in.
+         */
+        if($this->page_title) {
+            /*
+                Create the title itself as a <h1> using the h() function
+                in the Php2Html class.
+             */
+            $title = Php2Html::h([
+                'content' => $this->page_title,
+                'size' => '1'
+            ]);
+
+            /*
+                If a subtitle has been set, add it to $title as a paragraph
+                using the p() function in the Php2Html class with a class of 'lead-description'.
+             */
+            if($this->page_subtitle) {
+                $title .=  Php2Html::p([
+                    'class' => 'lead description',
+                    'content' => $this->page_subtitle
+                ]);
+            }
+
+            /*
+                Now $title will contain everything required in the page_title
+                div so we add it to $content using the div() function in the
+                Php2Html class.
+             */
+
+             $this->content = Php2Bs::bs_column ([
+                 'content' => Php2Html::h([
+                     'class' => 'col-12',
+                     'size' => '4',
+                     'content' => $title
+                 ]).breadcrumbs().$this->content
+             ]);
+        } // $this->page_title
+
+        /*
+            Now we just need to call the function that builds the page content, including all columns that may have been requested. The content could be called into one of several different layouts. The reason for this is you may want a slightly different layout for certain content such as some pages having a content specific sidebar.We do this by simply passing the layout() function into a Bootstrap container function.
+
+            layout() will generate the required columns, which will have already been populated with the $this->content variable created in the construct and any data that is specified in the indicidual column functions.
+         */
+        echo Php2Bs::bs_container ([
+            'content' => $this->layout()
+        ]); // container
+
+    } // content()
+
+    /**
+     * Set the correct layout
+     *
+     * Each of the different available layouts are created using the 'bs_row'
+     * and 'bs_column' functions from the Php2Bs (Bootstrap) class.
+     * The layouts that are available by default are
+     * 'full-width' - single column layout
+     * 'left-col'  - two column layout with left sidebar and content to the right
+     * 'right-col' - two column layout with right sidebar and content to the left
+     * 'three-col' - three column layout with both sidebars and content in the middle
+     * 'test' - a playground for testing styles.
+     *
+     * The required layout is set to $this->layout in the __construct of
+     * this file. If it has been passed in from the view as $args['layout']
+     * that is what it will be set to, otherwise it will be set to 'default'.
+     *
+     * We run a switch on $this->layout and return a row (bs_row). As well
+     * as setting any attributes, such as id's and classes, we pass in a
+     * parameter called 'content'. This will be be any number of functions
+     * that create columns using specific functions.
+     *
+     * The columns themselves could have multiple functions included and
+     * these are explained at the start of the columns functions below. Note
+     * that any classes applied to the rows will be inherited by the
+     * columns unless they have overriding classes.
+     *
+     * To add a new layout, create a new case in the switch statement,
+     * matching the format of the existing ones and create any new columns
+     * that are required.
+     *
+     * @return  string  Page Layout
+     */
+    protected function layout () {
+
+        switch ($this->layout) {
+            /*
+                Full Width
+
+                This is a single column layout using the main_column_full()
+                function, with an id of main_content and a class of bg-light
+             */
+            case 'full-width':
+                return Php2Bs::bs_row ([
+                    'content' => self::main_column_full (),
+                    'id' => 'main_content',
+                    'class' => '',
+                ]);
+            break;
+
+            /*
+                Left column
+
+                This is a two column layout using the left_Column () and
+                main_column() functions concatenated, with an id of main_content and a class of bg-dark text-info
+             */
+            case 'left-col':
+                return Php2Bs::bs_row ([
+                    'content' => self::left_Column ()
+								.self::main_column_medium (),
+                    'id' => 'main_content',
+                    'class' => 'bg-dark text-info',
+                ]);
+            break;
+
+            /*
+                Right column
+
+                This is a two column layout using the main_column() and
+                right_Column () functions concatenated, with an id of main_content and a class of text-danger
+            */
+            case 'right-col':
+                return Php2Bs::bs_row ([
+                    'content' => self::main_column_medium ()
+								.self::right_Column (),
+                    'id' => 'main_content',
+                    'class' => '',
+                ]);
+            break;
+
+            /*
+                Three column
+
+                This is a three column layout using the left_Column (),
+                main_column() and right_Column () functions concatenated,
+                with an id of multi_column.
+            */
+            case 'three-col':
+                return Php2Bs::bs_row ([
+                	'content' => self::left_Column ()
+								.self::main_column_small ()
+								.self::right_Column (),
+                	'id' => 'multi_column',
+                ]);
+            break;
+
+            /*
+                Test layout
+
+                This is here as a simple way of testing new things or
+                playing around with layouts and contains a few more attributes.
+            */
+            case 'test':
+                return Php2Bs::bs_row ([
+					'content' => self::main_column_full (),
+                    'class' => 'bg-info',
+                    'id' => 'main_content',
+                    'data_attr' => [
+                        'ref' => 'refdata',
+                        'cat' => 'news'
+                    ]
+                ]);
+            break;
+
+            /*
+                Default layout
+
+                If no layout has been specified in the view, we default to
+                the left column one.
+            */
+            default:
+                return Php2Bs::bs_row ([
+                    'content' => self::left_Column ()
+								.self::main_column_medium (),
+                    'id' => 'main_content',
+                ]);
+            break;
+        } // Layout switch
+    }
+
+    /**
+     * Layout column functions
+     *
+     * These are the functions that are called in to the rows created in
+     * layout() and are all created using the 'bs_column' function
+     * from the Php2Bs (Bootstrap) class.
+     *
+     * As when creating the rows we can set any attributes, such as id's and
+     * classes, with the actual required output being passed as 'content'.
+     *
+     */
+
+    /*
+        Medium Main Column
+
+        Used in the 'left-col' and 'right-col' versions.
+
+        As this is a main content column, the 'content' comes directly from
+        $this->content (the $content passes in from the view).
+
+        Using the Bootstrap grid sizes it is full with, changing to 9/12
+        width at the medium breakpoint.
+     */
+    private function main_column_medium () {
+        return Php2Bs::bs_column ([
+            'content' => $this->content,
+            'id' => 'main_content_standard',
+            'class' => 'col-12 col-md-9'
+        ]);
+    } // main_column_medium ()
+
+    /*
+        Full Main Column
+
+        Used in the 'full-width' version.
+
+        As this is a main content column, the 'content' comes directly from
+        $this->content (the $content passes in from the view).
+
+        Using the Bootstrap grid sizes it is full with at all breakpoints.
+     */
+    private function main_column_full () {
+        return $this->content;
+    } // main_column_full ()
+
+    /*
+        Small Main Column
+
+        Used in the 'three-col' version.
+
+        As this is a main content column, the 'content' comes directly from
+        $this->content (the $content passes in from the view).
+
+        However, this time we also concatenate the function demo_extra_box() to give extra content to the column.
+
+        Using the Bootstrap grid sizes it is full with, changing to 6/12
+        width at the medium breakpoint.
+     */
+	private function main_column_small () {
+        return Php2Bs::bs_column ([
+			'content' => $this->content
+						.$this->demo_extra_box (),
+			'id' => 'main_small_column',
+			'class' => 'col-md-6'
+        ]);
+
+    } // main_column_small ()
+
+	/*
+        Left Column
+
+        Used in the 'default', 'left-col' and 'three-col' version.
+
+        This is not a main content column so we build the entire column
+        content within the function. For this one we simply concatente the
+        user_box () and side_menu () functions.
+
+        Using the Bootstrap grid sizes it is full with, changing to 3/12
+        width at the medium breakpoint. We have also added some other class
+        values.
+
+        TODO: Put something more useful in here
+     */
+    private function left_Column () {
+        return Php2Bs::bs_column ([
+			'content' => 'Left Hand Box',
+			'id' => 'left',
+			'class' => 'col-12 col-md-3 left-col bg-warning pt-2'
+        ]);
+    } // left_Column ()
+
+    /*
+        Left Column
+
+        Used in the 'default', 'right-col' and 'three-col' version.
+
+        This is not a main content column so we build the entire column
+        content within the function. For this one we simply concatente the
+        side_menu () and user_box () functions (the same as we did in left_column () but in a different order. Also, in this one we concatenate them into a variable first, rather than straight into the bs_column function.
+
+        Using the Bootstrap grid sizes it is full with, changing to 3/12
+        width at the medium breakpoint. We have also added some other class
+        values.
+
+        TODO: Check if this content is required and tidy up
+     */
+	private function right_Column () {
+
+        return Php2Bs::bs_column ([
+			'content' => $this->{$this->sidebar}(),
+			'id' => 'right',
+			'class' => 'col-12 col-md-3 right-col bg-info pt-2 mt-4 mt-md-0'
+        ]);
+    } // right_Column ()
+
+    private function calls_sidebar() {
+        return Php2Bs::bs_card ([
+            'class' => 'border-primary bg-light mb-1 ',
+            'header' => array (
+                'content' => 'Call Log Menu'
+            ),
+            'body' => array (
+                'content' =>  Php2Html::a ([
+                    'content' => 'Add New Call',
+                    'class' => 'btn btn-success btn-sm btn-block mb-1',
+                    'href' => '/CallLog/Add'
+                ]).
+                Php2Html::ul ([
+                    'class' => 'list-group',
+                    'content' => Php2Html::a([
+                        'content' => 'Listing',
+                        'class' => 'list-group-item',
+                        'href' => '/CallLog/Listing'
+                    ]),
+                ]).
+                Php2Html::ul ([
+                    'class' => 'list-group',
+                    'content' => Php2Html::a([
+                        'content' => 'Today',
+                        'class' => 'list-group-item',
+                        'href' => '/CallLog/Listing/Today'
+                    ]),
+                ]).
+                Php2Html::ul ([
+                    'class' => 'list-group',
+                    'content' => Php2Html::a([
+                        'content' => 'This Week',
+                        'class' => 'list-group-item',
+                        'href' => '/CallLog/Listing/Week'
+                    ]),
+                ]).
+                Php2Html::ul ([
+                    'class' => 'list-group',
+                    'content' => Php2Html::a([
+                        'content' => 'This Month',
+                        'class' => 'list-group-item',
+                        'href' => '/CallLog/Listing/Month'
+                    ]),
+                ]).
+                Php2Html::ul ([
+                    'class' => 'list-group',
+                    'content' => Php2Html::a([
+                        'content' => 'This Year',
+                        'class' => 'list-group-item',
+                        'href' => '/CallLog/Listing/Year'
+                    ]),
+                ]),
+                'class' => 'p-2',
+            ),
+        ]);// bs_card
+    }
+
+    private function ideas_sidebar() {
+        return Php2Bs::bs_card ([
+            'class' => 'border-primary bg-light mb-1 ',
+            'header' => array (
+                'content' => 'Ideas Menu'
+            ),
+            'body' => array (
+                'content' =>  Php2Html::a ([
+                    'content' => 'Add New Idea',
+                    'class' => 'btn btn-success btn-sm btn-block mb-1',
+                    'href' => '/Ideas/Add'
+                ]).
+                Php2Html::ul ([
+                    'class' => 'list-group',
+                    'content' => Php2Html::a([
+                        'content' => 'Listing',
+                        'class' => 'list-group-item',
+                        'href' => '/Ideas/'
+                    ]),
+                ]),
+                'class' => 'p-2',
+            ),
+        ]);// bs_card
+    }
+
+    private function faults_sidebar() {
+        return Php2Bs::bs_card ([
+            'class' => 'border-primary bg-light mb-1 ',
+            'header' => array (
+                'content' => 'Faults Menu'
+            ),
+            'body' => array (
+                'content' =>  Php2Html::a ([
+                    'content' => 'Add New Fault',
+                    'class' => 'btn btn-success btn-sm btn-block mb-1',
+                    'href' => '/Faults/Add'
+                ]).
+                Php2Html::ul ([
+                    'class' => 'list-group',
+                    'content' => Php2Html::a([
+                        'content' => 'Listing',
+                        'class' => 'list-group-item',
+                        'href' => '/Faults/Listing'
+                    ]),
+                ]).
+                Php2Html::ul ([
+                    'class' => 'list-group',
+                    'content' => Php2Html::a([
+                        'content' => 'Today',
+                        'class' => 'list-group-item',
+                        'href' => '/Faults/Listing/Today'
+                    ]),
+                ]).
+                Php2Html::ul ([
+                    'class' => 'list-group',
+                    'content' => Php2Html::a([
+                        'content' => 'This Week',
+                        'class' => 'list-group-item',
+                        'href' => '/Faults/Listing/Week'
+                    ]),
+                ]).
+                Php2Html::ul ([
+                    'class' => 'list-group',
+                    'content' => Php2Html::a([
+                        'content' => 'This Month',
+                        'class' => 'list-group-item',
+                        'href' => '/Faults/Listing/Month'
+                    ]),
+                ]).
+                Php2Html::ul ([
+                    'class' => 'list-group',
+                    'content' => Php2Html::a([
+                        'content' => 'This Year',
+                        'class' => 'list-group-item',
+                        'href' => '/Faults/Listing/Year'
+                    ]),
+                ]),
+                'class' => 'p-2',
+            ),
+        ]);// bs_card
+    }
+
+    private function default_sidebar() {
+        $model = new M_Users();
+        $latestuser = $model->mostRecent();
+        $latest_user_date = new DateTime($latestuser->joined);
+
+        $n = $latestuser->username;
+        $d = $latest_user_date->format('d/m/Y g:ia');
+        $userbox_content = Php2Html::p ([
+            'content' => 'Total : '.$model->count(),
+        ]);
+        $userbox_content .= Php2Html::p ([
+            'content' => "Most recent <br> $n joined<br>$d",
+        ]);
+
+        return Php2Bs::bs_card ([
+            'class' => 'border-primary bg-light mb-1 ',
+            'header' => array (
+                'content' => 'Members'
+            ),
+            'body' => array (
+                'content' => $userbox_content,
+                'class' => 'p-2',
+            ),
+        ]);// bs_card
+    }
+
+    /*
+        Demo Box
+
+        This is purely to show how extra content can be tacked on to any of the columns. It is only used in main_column_small(), which is the content area on the 'three-col' version.
+    */
+    private function demo_extra_box () {
+
+        return Php2Bs::bs_alert([
+            'heading' => 'Alert Example',
+            'content' => Php2Html::p([
+                'content' => 'Stuff can go here.'
+            ]),
+            'dismissible' => false,
+            'color' => 'warning',
+        ]);
+    } // demo_extra_box ()
+
+}
+
+
+
+
+
+
+
+
+
+
+======================================================================================
+
+
+
+
+
+
+
+
+
+<?php
+
+/**
+ * Base Template
+ *
+ * This file contains the core structure and functions for building the template
+ * and allows several different versions to built around it. No output is actually
+ * made from this file as it only contains functions to help with the template
+ * construction.
+ *
+ * This file should never be called directly, but should be extended from another
+ * class that processes the data to display, only using these functions for the
+ * core global elements such as the <head> and separate opening and closing <body>
+ * tags, along with the global navbar and footer.
+ *
+ * This means that the class file that extends this only has to deal with the
+ * page-specific content and how to lay it out. An example file that extends this
+ * one is T_Main.php in this folder.
+ *
+ * For an example of a completely self-enclosed template file look at T_Admin.php
+ * in this folder.
+ *
+ * @package 	Core
+ * @author  	Steve Ball <steve@follyball.co.uk>
+ * @copyright 	Copyright (c) 2018 Steve Ball <steve@follyball.co.uk>
+ */
+class T_Base {
+
+	/**
+	 * Build the HTML down to the opening body tag and include extra css
+     *
+     * Creates the opening <doctype> and <html> tags, inserts the <head>
+     * tag before finally creating the opening <body> tag. The closing <body>
+     * and <html> tags are created in the bodyEnd() function.
+     *
+     * The <head> is craetd via the head() function and contains the global
+     * css and meta tags as well as and page-specific ones requested when the
+     * template was called.
+	 *
+	 * @return string 					Template to the opening <body> tag
+	 */
+    public function bodyStart () {
+
+        // Start off by specifying the doctype
+        $out = ' <!doctype html>';
+
+        // Open the html tag
+        $out .= '<html lang="en">';
+
+        /*
+            Include the <head> section, including any page-specific css, js or meta tags.
+
+            It uses the head() function from within this file, which access various $this variables set in the __construct() in T_Main, passed in via the view, so we do not need to pass any arguments in when calling it.
+         */
+        $out .= self::head ();
+
+        // Open the body tag
+
+        $out .= '<body class="'.$this->body_class.'">';
+
+        // Echo out everything created in the function
+        echo $out;
+    } // bodyStart()
+
+	/**
+	 * Finish the HTML
+	 *
+	 * @return string 					Template for the end of the HTML
+	 */
+    public function bodyEnd () {
+
+		/**
+         * Include any extra js
+         *
+         * If a page needs any extra js apart from the default, this will
+         * have been specified using an $include array when calling new T_Main_Template.
+         *
+         * These will be set using their Globals::get() reference
+         *
+         * @var array/null
+         */
+        $out = self::scripts ();
+
+        // Close the body tag
+        $out .= '</body>';
+
+        // Close the html tag
+        $out .= '</html>';
+
+        // Echo out everything created in the function
+        echo $out;
+
+    } // bodyEnd()
+
+	/**
+	 * Build the <head> section
+	 *
+	 * Builds the entire <head> tag and includes any global or
+	 * page specific css and meta tags.
+	 *
+	 * @return     string      <head> section
+	 */
+    private function head () {
+		/*
+            We build the contents of the <head> gradually so we create a $out
+            variable containing the opening tag and concatenate to it as we go along.
+         */
+		$out = '<head>';
+
+		/*
+            Include the <meta> tags
+
+            Each of the meta tags should initially be stored in the meta_tags()
+            function in /app/core/Settings.php with a default content to be used
+            if an alternative is not set.
+
+            For page specific meta tags, set a key/pairing array in the view as
+            $params['meta'] with the name and content of each once you want to
+            overwrite.
+
+            You can also set global meta tags manually and this is required for any
+            that do not use a name and content combination.
+         */
+        $out .=  ' <meta charset="utf-8">';
+
+        /*
+            As there may be overrides for some of the meta tags set in the page/view, we initially store the default meta tags in a $tags variable so it can be easily manipulated.
+         */
+        $tags = Settings::meta_tags();
+
+        /*
+            If any page-specific meta tags have been passed in, they would have
+            been set to $this->meta in the called template file (by default
+            /app/core/Templates/Main.php).
+            We loop though these and for each one, overwrite the matching tag
+            name in $tags.
+         */
+        if(isset($this->meta))
+        {
+            foreach ($this->meta as $name => $content) {
+
+                $tags[$name] = $content;
+            }
+        }
+
+        /*
+            Finally, we loop through the tags array and create a meta tag for each one, adding it to the $out variable.
+         */
+        foreach ($tags as $name => $content) {
+            $out .= Php2Html::meta([
+                    'name' => $name,
+                    'content' => $content
+            ])."\n";
+        }
+
+		/*
+            Set the Page Title
+
+            If the page title has been passed in from the view, show the site name as set in Settings.php followed by a colon and then the page title.
+            Otherwise, it just shows the site name.
+
+            You can change this to suit your needs.
+         */
+		$title = isset($this->page_title) ? Settings::site_details('site_name') .': '.$this->page_title: Settings::site_details('site_name');
+		$out .=  '<title>' . $title. '</title>';
+
+		// Link the Favicon
+		$out .=  '<link rel="shortcut icon" href="/favicon.ico">';
+
+		/*
+            Call in the stylesheets
+
+            Again, you can have global style sheets as well as page, specific ones. Wherever they are set, they are called from the css() function in /app/core/Settings.php.
+            These are set in a multidimensional array and return the full stylesheet link
+            as a string.
+            When setting, simply set the path to the stylesheet separated by slashes so
+            'remote/bootstrap/v4_beta' would return the string at
+            'remote' => 'bootstrap' => 'v4_beta'.
+
+            To include any globally, simply concatenate them to the $out variable.
+
+            To include any page specific, pass them in via a $params['css'] array, simply
+            using the string.
+
+            Note that you will need to be careful with the order of these to ensure there are
+            no class name conflicts. As you can see, here we have set 'local/site' after
+            everything else to ensure it is the last one called and therefore takes priority.
+         */
+		$out .= Settings::css('remote/bootstrap/v4');
+
+        // Loop through the page specific styles
+        if(isset($this->css))
+        {
+            foreach ($this->css as $stylesheet) {
+                $out .= Settings::css($stylesheet);
+            }
+        }
+
+
+        $out .= Settings::css('local/site');
+
+        // Close the head tag
+        $out .=  '</head>';
+
+        // Echo the $out variable
+		echo $out;
+
+    } // head()
+
+	/**
+	 * Build the required scripts
+	 *
+	 * Builds the js and third party scripts
+	 *
+	 * @return string          			<head> section
+	 */
+    private function scripts () {
+        $out = '';
+
+        /*
+            Call in the any scripts
+
+            Again, you can have global scripts as well as page, specific ones. Wherever they are set, they are called from the js() function in /app/core/Settings.php.
+            These are set in a multidimensional array and return the full script link
+            as a string.
+            When setting, simply set the path to the stylesheet separated by slashes so
+            'remote/bootstrap/v4' would return the string at
+            'remote' => 'bootstrap' => 'v4'.
+
+            To include any globally, simply concatenate them to the $out variable.
+
+            To include any page specific, pass them in via a $params['js'] array, simply
+            using the string.
+
+            Note that you will need to be careful with the order of these to ensure there are
+            no class name conflicts. As you can see, here we have set 'local/default' after
+            everything else to ensure it is the last one called and therefore takes priority.
+         */
+         $out .= Settings::js('remote/jquery');
+         $out .= Settings::js('remote/popper');
+         $out .= Settings::js('remote/bootstrap/v4');
+         $out .= Settings::js('remote/font-awesome-5');
+
+        // Loop through the page specific styles
+        if(isset($this->js)) {
+            foreach ($this->js as $script) {
+                $out .= Settings::js($script);
+            }
+        }
+
+        $out .= Settings::js('local/default');
+
+        // Echo the $out variable
+        echo $out;
+
+    } // scripts()
+
+	/**
+	 * Build the top navigation menu
+	 *
+	 * Sets the static parts of the menu and turns Globals::get('menus/main_top_nav')
+	 * in the required links and dropdowns
+	 *
+	 * @return string 	nav
+	 */
+    public function topNav () {
+        // Main Site Top Navigation Menu
+        $nav_items = [
+            'Home' => ['link', '/'],
+            'Users' => ['link', '/Users/'],
+            'Faults' => ['link', '/Faults/'],
+            'Call Log' => ['link', '/CallLog/'],
+            '\'One Thing\'' => ['link', '/OneThing/'],
+            'Ideas' => ['link', '/Ideas/'],
+
+        ]; // $nav_items
+
+        $out = '';
+
+        $toggle_button = Php2Html::button ([
+            'content' => Php2Html::span ([
+                    'content' => '',
+                    'class' => 'navbar-toggler-icon'
+            ]),
+            'class' => 'navbar-toggler navbar-toggler-right mr-auto',
+            'data_attr' => [
+                'toggle' => 'collapse',
+                'target' => '#main-nav',
+            ],
+            'aria' => [
+                'controls' => 'main-nav',
+                'expanded' => 'false',
+                'label' => 'Toggle navigation',
+
+            ],
+        ]);
+
+         $menu = '';
+         foreach ($nav_items as $key => $value)
+ 		{
+ 			// 'type' is set as 'link'
+            if($value[0] == 'link') {
+ 				/*
+ 					Build a <li> with the class of .nav-item
+ 					Inside this put an <a> with a value of $value[1] (the link)
+ 					and a display of $key (the link name)
+ 				 */
+                 $params['href'] = $value[1];
+                 $params['class'] = 'text-light';
+                 $params['content'] = $key;
+                 $menu .= Php2Bs::bs_nav_item ([
+                     'content' => Php2Bs::bs_nav_link (
+                         $params
+                     )
+                 ]);
+            }
+
+ 			// 'type' is set as 'dropdown'
+             if($value[0] == 'dropdown') {
+ 				/*
+ 					Build a <li> with the class of .nav-item dropdown .
+
+ 					Inside this, build an <a> with a class of dropdown-toggle. This
+ 					will then use the Bootstap toggle class.
+ 					Set the id to the $key (the link name) appended with '_menu'. This
+ 					will be to target the correct dropdown menu. Also set the display to $key.
+
+ 					Build a <div> with the class of .dropdown-menu. Give it an
+ 					aria-labelledby of $key appended with '_menu' so it matches
+ 					the <a> that triggers it.
+
+ 					Finally, inside the div, loop through the links (stored in $value[1]) and creat an <a> for each one.
+ 				 */
+                  $links = '';
+                  foreach ($value[1] as $items => $item)
+                  {
+
+
+                      $links .= Php2Bs::bs_dropdown_item([
+							'content' => $items,
+                            'href' => $item[1]
+                      ]);
+
+                       //$out .= '  <a class="dropdown-item" href="'.$item[1].'">'.$menu.'</a>';
+                  }
+
+                 $menu .= Php2Bs::bs_nav_dropdown([
+
+                         'li' => [
+                             //'class' => 'nav-item dropdown',
+                         ],
+                         'a' => [
+                             'content' => $key,
+                             'id' => $key.'_menu',
+                             'class' => 'text-info-100',
+                             'data_attr' => [
+                                 'toggle' => 'dropdown',
+
+                             ],
+                             'aria' => [
+                                 'haspopup' => 'main-nav',
+                                 'expanded' => 'true',
+                                 'expanded' => 'false',
+
+                             ],
+                         ],
+                         'menu' => [
+                             'content' => $links,
+                         ]
+
+                 ]);
+             }
+         }
+
+
+        $nav_params['content'] = Php2Bs::bs_navbar_nav ([
+			'content' => $menu
+        ]);
+        $nav_params['class'] = 'mr-auto';
+        $nav_params['id'] = 'main-nav';
+
+        $navbar_collapse = Php2Bs::bs_navbar_collapse (
+            $nav_params
+        );
+
+        $user = new M_Users();
+
+        if(!$user->isLoggedIn()) {
+            $user_button_text = 'Login';
+        } else {
+            $user_button_text = 'Logout / Profile';
+        }
+
+        $user_button = Php2Html::ul ([
+            'content' => Php2Html::li ([
+                'content' => Php2Html::a ([
+                    'content' => $user_button_text,
+                    'href' => '#',
+                    'id' => 'left',
+                    'class' => 'text-light nav-link position-relative',
+                    'data_attr' => [
+                         'toggle' => 'collapse',
+                         'target' => '#nav-user'
+                    ],
+                    'aria' => [
+                         'controls' => 'nav-user',
+                         'expanded' => 'false',
+                         'label' => 'Toggle user navigation'
+                    ]
+                ]),
+                'class' => 'navbar-item',
+            ]),
+            'class' => 'navbar-nav',
+        ]);
+
+
+         $out = Php2Bs::bs_navbar ([
+            // Navbar content
+            'content' => Php2Bs::bs_container ([
+                'content' =>  $toggle_button.$navbar_collapse.$user_button,
+                'class' => 'text-white',
+                //'type' => 'fluid'
+            ]),
+            'class' => 'navbar-expand-lg navbar-dark bg-dark invert sticky-top h-1 pl-2 p-md-0'
+
+
+        ]);
+        $out .= Php2Bs::bs_container ([
+            'container_type' => 'fluid',
+            'content' => Php2Bs::bs_container ([
+                'content' => $this->user_box (),
+
+
+            ]),
+            'class' => 'collapse py-2 bg-light text-dark border-bottom border-dark',
+            'id' => 'nav-user'
+        ]);
+
+
+ 		echo $out;
+     } // topNav()
+     /**
+      * Basic outputs for test
+      *
+      * These are just temporary functions to show something in the
+      * left and right columns.
+      *
+      * All will be replaced with something more useful.
+      */
+     protected function user_box () {
+         $model = new M_Users();
+
+         if($model->isLoggedIn()) {
+
+             $model->find(Session::get(Settings::members()['login_session']));
+
+             $link_array = [
+                 'Profile' => [
+                     'href' => '/Users/'.$model->data()->username,
+                 ],
+                 'Edit Details' => [
+                     'href' => '/Users/Edit',
+                 ]
+             ];
+
+             if($model->hasPermission('admin')) {
+                 $link_array['Admin Area'] = ['href' => '/Admin'];
+             }
+
+
+             $content = '';
+             $content .= Php2Bs::bs_list_group ([
+                 'content' => $link_array,
+                 'group_type' => 'a',
+                 'class' => ' mb-2'
+             ]);
+
+             $content .= $model->logoutForm();
+         } else {
+             $content = $model->loginForm();
+         }
+
+         return $content;
+
+     }
+
+	/**
+	 * Build footer
+	 *
+	 * Sets the page footer
+	 *
+	 * @return string 	footer
+	 */
+    public function footer () {
+        $out = Php2Bs::bs_footer ([
+            'content' => Php2Bs::bs_container ([
+                'content' =>  'Footer content.',
+                'class' => 'text-white',
+            ]),
+            'class' => 'bg-dark',
+        ]);
+		echo $out;
+    } // footer()
+
+
+}
+
+
+
+
+
+
+
+
+
+
+======================================================================================
+
+
+
+
+
+
+
+
+
+<?php
+
+/**
+ *  Users Model
+ *
+ *  Contains the standard functions for data
+ *  manipulation, as well as the CRUD forms and displays.
+ *
+ *  Note that Users have a lot more functionality than mosts sections so there is a lot more to this one than most
+ *  models will contain.
+ *
+ *  @package Core
+ *  @author  Steve Ball <steve@follyball.co.uk>
+ *  @copyright Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
+ */
+
+// Include the initiation file
+require_once 'src/init.php';
+
+class M_Users
+{
+    private
+        $_data,
+        $_db_table = 'users',
+        $_field,
+        $_field_data,
+        $_form_data,
+        $_form_fields,
+        $_params,
+        $_record,
+        $_qry;
+
+    public $_insertId;
+
+    /**
+     * Construct the database connection
+     *
+     *	Opens up a connection to the database and assigns it to
+     *	$this->_pdo to make it re-usable.
+     *
+     * The connection parameters are called using Globals on values held
+     * in /app/core/config_files/db.php
+     *
+     * @return 	Database connection
+     */
+    public function __construct()
+    {
+        $this->_logs = new Logs();
+
+    } //__construct ()
+
+    /**
+     * Connect to the database
+     *
+     * Returns an instance of the database connection to be used
+     * within the class. This is set as a function as it also needs
+     * to be accessed by the model.
+     *
+     * @return  Database connection
+     */
+    protected function db() {
+        return  DB::dbConnect();
+    } // db()
+
+    /**
+     * Get the total number of records
+     *
+     * @return int 	    Count of rows
+     */
+    public function count() {
+        // Select all records from the database
+        $_qry  =  $this->db()->query('SELECT * FROM '.$this->_db_table);
+
+        // Return a count of the records returned
+        return $_qry->count();
+    } // count()
+
+    /**
+	 *	Change a users password
+	 *
+	 *	Creates a new salt and hashed password and updates a users
+	 *	record with them.
+	 *
+	 *	@params 	int		$user		User ID
+	 **/
+	public function changePassword ($user)
+    	{
+		// We always use validation as an object so we do this for constency
+		$_validate = (object)array();
+
+		// Place the $_POST data into a variable that will get manipulated.
+		$_postdata = $_POST;
+
+		/*
+			The forms all have .req-token to prevent double-posting on page
+			refresh. This generates a new $_SESSSION['token'] value and also
+			adds a hidden form element containing the $_SESSSION['token'].
+
+			We need to check that the posted token matches the current $_SESSSION['token']
+			and only proceed if it does.
+		 */
+		if(!Token::check(Input::get('token')))
+    		{
+    			// The token check failed so set the errors to 'token'
+    			$_validate->error = 'token';
+
+    		}
+    		else
+    		{
+			/*
+				The token check is succesful, so we again unset that from the $_postdata array, along with the
+				submit button, to ensure we only have insert data left.
+			*/
+			unset($_postdata->token);
+			unset($_postdata->reset_password_submit);
+
+			/*
+				We now attempt to validate the contents of $_postdata.
+
+				The validation for this form is passed directly into Form_Functions::postValidate(), along with the $_postdata and
+				this checks each field in $_postdata against it's relevant validation if it exists.
+
+				The function returns a boolean 'status' as to  whether validation was passed. If validation failed, it will also contain any
+				validation errors that have been generated.
+			 */
+			$_validate = Form_Functions::postValidate($_postdata,
+			array (
+			    'password' => [
+					'validation' => [
+					    'required' => true,
+					    'min' => 6
+					],
+				],
+			    'confirm_password' => array(
+				'type' => 'password',
+				'error' => 'You must enter a confirmation password that matches the password',
+				'validation' => array(
+				    'required' => true,
+				    'matches' => 'password'
+				),
+			    ))
+			);
+
+			if($_validate->status)
+			{
+				// Create a new salt
+				$salt = Hash::salt(32);
+
+				/*
+					The original $_postdata -> password cannot be entered as it is a raw string of readable data.
+
+					We replace this with a hashed password, generated using the salt we just created and also create
+					a new element in $_postdata with the salt as when logging in, we will need the updated salt to match
+					the stored, hashed, password.
+				*/
+				$_postdata = array(
+				'password' => Hash::make(Input::get('password'), $salt),
+				'salt' => $salt
+				);
+
+				// Now we have the correct $_postdata so use quickUpdate() to process it.
+				$this->quickUpdate($user, $_postdata);
+			}
+		}
+
+		// Return any errors
+		return (isset($_validate->error)) ? $_validate->error : false ;
+    	} // changePassword()
+
+
+    /**
+     * Check the user cookie
+     * @param string $hash The hash value stored in gthe login cookie table
+     */
+    public function checkCookie() {
+        if (Cookie::exists(Settings::members()['user_cookie'])) {
+            // Check to see if this user already has a login hash - if so, something is wrong with logouts
+            $hashCheck = $this->db()->get('login_cookie', array('hash', '=', Cookie::get(Settings::members()['user_cookie'])));
+
+            // As long as there is no existing record, add one to the login_cookie table
+            if ($hashCheck->count()) {
+                if ($this->find($hashCheck->first()->user_id)) {
+                    Session::put(Settings::members()['login_session'], $this->data()->id);
+                    Session::put(Settings::members()['user_login_group'], $this->data()->group);
+                }
+
+            } else {
+                Cookie::delete(Settings::members()['user_cookie']);
+            }
+        }
+
+    } // setUserCookie()
+
+    /**
+	 * Check the user hash
+	 *
+	 * Checks an email/hash combination for a matching
+	 * value in the user_hash table, returning the count
+	 *
+	 * @param  email 	$email 	Users Email address
+	 * @param  sha256 	$hash  	Stored hash
+	 * @return int        		Count of returned results
+	 * @example /controllers/users/home->verify()
+	 *
+	 */
+	public function checkUserHash ($email, $hash) {
+        if(self::db()->query("SELECT * FROM user_hash WHERE email = ? AND hash = ?", array($email, $hash))->count()) {
+            return true;
+        }
+        return false;
+    } // checkUserHash()
+
+    /**
+	 * Create a new record
+	 *
+	 * Collects post data, validates it and inserts it into the database
+	 *
+	 */
+	public function create ($_params=[]) {
+        $_params['salt'] = Hash::salt(32);
+        $_params['password'] = Hash::make(Input::get('password'), $_params['salt']);
+        $_params['joined'] = date('Y-m-d H:i:s');
+
+        if (!self::db()->insert($this->_db_table, $_params)){
+            # maybe Redirect::to('404');
+			// The insert was unsuccesful
+			if (Settings::site_details('debug_mode')) {
+                throw new Exception();
+            } else {
+                echo 'Issue with M_Users->create()';
+            }
+
+			return false;
+		}
+        $this->_insertId = $this->db()->insertId();
+        return true;
+
+	} // create()
+
+    /**
+   	 * Creates a record in the user_hash table
+   	 *
+   	 * Whenever a user has to verify by email, the link they are
+   	 * sent will contain their email address and a hash string that
+   	 * matches a row in the user_hash table.
+   	 *
+   	 * This is to ensure a valid request has been used.
+   	 *
+   	 * @param  array 	$_fields 	Email and Hash
+   	 */
+    public function createUserHash($_fields) {
+        $_fields['stamp'] = Settings::current_datetime()->format('Y-m-d H:i:s');
+        if (!self::db()->insert('user_hash', $_fields)) {
+            throw new Exception('There was a problem creating a user hash!');
+        }
+    } // createUserHash()
+
+    /**
+     * Return a records data
+     *
+     * Returns the private $this->_data details
+     * array in a public function
+     *
+     * @return array 	Record data
+     *
+    **/
+    public function data() {
+        return $this->_data;
+    } // data()
+
+    /**
+         * Delete a record
+         *
+         *  Deletes the specified record from $this->crud_table()->name
+         *
+         * @param  int  $record  Record ID
+         */
+	public function delete ($record) {
+		// We do not have to unset, add or amend anything so purely run the delete
+			if(!self::db()->delete($this->_db_table, array('id', '=', $record)))
+			{
+				// The update was unsuccesful
+				throw new Exception('There was a problem updating the account!');
+				// Flash a generic error message
+				$this->crudFlash ('generic_error');
+
+				return false;
+			}
+
+            return true;
+
+	} // delete()
+
+
+    /**
+     * Delete the user cookie
+     *
+     * As well as deleting the cookie, this also removes the
+     * record from then login_cookie table
+     *
+     * @param  int 	$user 	User ID
+     */
+    public function deleteCookie() {
+        $hashCheck = $this->db()->delete('login_cookie', array('hash', '=', Cookie::get(Settings::members()['user_cookie'])));
+        Cookie::delete(Settings::members()['user_cookie']);
+    } // deleteUserCookie()
+
+    public function deleteForm () {
+
+
+        $content = '';
+
+
+        $bottom_row = Php2Bs::bs_form_group ([
+            'class' => '',
+            'content' => Php2Bs::bs_button ([
+                'button_type' => 'submit',
+                'color' => 'danger',
+                'size' => 'sm',
+                'class' => 'float-right',
+                'content' => 'Delete',
+                'name' => 'delete_user'
+            ])
+        ]); // $bottom_row
+
+        // Wrap whatever we have in $bottom_row in a form row
+        $content .= Php2Bs::bs_form_row ([
+            'content' => $bottom_row,
+        ]); // Php2Bs::bs_form_row
+
+
+        // Compile the form
+        return Php2Html::form([
+            'id' => '',
+            'action' => '',
+            'method' => 'post',
+            'class' => 'req-token',
+            'content' => $content
+        ]); //  Php2Html::form
+
+        return $content;
+    } // userForm
+
+    /**
+     * Delete user hash
+     *
+     *  Deletes the
+     *
+     * @param  int  $record  Record ID
+     */
+    public function deleteUserHash ($_hash) {
+        if(!self::db ()->delete('user_hash', array('hash', '=', $_hash)))
+        {
+            throw new Exception('There was a problem updating the account!');
+            $this->crudFlash ('generic_error');
+
+            return false;
+        }
+    } // delete ()
+
+    /**
+     *  Check if a record exists
+     *
+     *	Checks to see if $this->data() exists following a find()
+     *
+     **/
+    public function exists() {
+      return ($this->data()) ? true : false;
+    } // exists()
+
+    /**
+     * Find a record
+     *
+     * Finds a record and assigns it's details from the $this->_db_table
+     * table to $this->_data. This can then be accessed from other files
+     * using data().
+     *
+     *
+     * @param  string/email/int 	$group  	Group identifier
+     * @return Boolean/Array
+     */
+    public function find($_record=null) {
+
+        // We only run this if a record has been passed in so check for it
+        if ($_record)
+        {
+            /*
+                A record has been passed in so we now need to check what parameter has
+                been used to determine which field we are going to check it against in the table.
+
+                For Users, the $_record will either be the id or the username so we do not have
+                to manipulate it at all. There will be some occasions where we have to tweak
+                $_record to suit what is stored in the database compared to what we can use in a url. Ideally in these situations, we would use a slug.
+
+                If $_record is a number, we will assume it is the id field as usernames must start with a letter, otherwise it must be the username.
+
+             */
+            if(is_numeric($_record) && (int) $_record == $_record)
+            {
+                // $_record is numeric so we need to look up the id field
+                $_field = 'id';
+            } else
+            {
+                // $_record is not numeric so we need to look up the username or email field depending on the data posted
+                $_field = (filter_var($_record, FILTER_VALIDATE_EMAIL)) ? 'email' :   'username';
+            }
+
+            // Search the table for the passed in $_record and correct $_field
+            $data = self::db()->get($this->_db_table, array($_field, '=', $_record));
+
+            // If the query returns any rows, set the data to $this->_data and return true
+            if ($data->count()) {
+                $this->_data = $data->first();
+                return true;
+            }
+        }
+        return false;
+    } // find()
+
+    /**
+	 * Check if a remember me cookie exists
+	 * @return boolean Cookie existence
+	 */
+	public function hasCookie() {
+        return (Cookie::exists(Settings::members()['user_cookie'])) ? true : false ;
+    } // hasUserCookie()
+
+    /**
+     * Check a user has the required permission
+     *
+     *	Each user group can have multiple permissions and these
+     *	are stored as json.
+     *
+     * 	If a groups permissions we as follows {"super_admin":0, "admin": 1,"mod":1}
+     *
+     *     hasPermission('super_admin') would return false
+     *     hasPermission('admin') would return true
+     *     hasPermission('mod') would return true
+     *
+     *   @param  string  $key The permission name
+     *   @return boolean      Permission status
+     *   @example hasPermission('admin')
+     */
+    public function hasPermission ($key) {
+        // Get the user group details for the current user
+        $usergroup = self::db()->get(
+            'user_groups',
+            array(
+                'id', '=', Session::get(Settings::members()['user_login_group'])
+            )
+        );
+
+        // As long as the user group is set, check if that group has the requested permission
+        if($usergroup->count())
+        {
+            // Set the permissions of the users group to $permissions array
+            $permissions = json_decode($usergroup->first()->permissions, true);
+
+            // Check if the requested permission exists in the array
+            if ($permissions[$key] == true)
+            {
+                // The permission exists so return true
+                return true;
+            }
+        }
+        return false;
+    } // hasPermission()
+
+    /**
+	 * Check if a user is logged in
+	 * @return boolean Login Status
+	 */
+	public function isLoggedIn() {
+		return (Session::exists(Settings::members()['login_session'])) ? true : false ;
+	} // isLoggedIn()
+
+    /**
+         * Return a list of Records
+         *
+         * @return array  List of Records
+         */
+    public function listing() {
+        // Select all records from the database
+        $list = self::db()->query('SELECT
+        *
+        FROM `' . $this->_db_table . '`'
+        );
+
+        // Return the results as an array
+        return $list->results();
+    } // listing()
+
+    /**
+     * Show the login form
+     *
+     * Displays the login form
+     *
+     * @return 	string 	Login Form
+     * @example /app/core/Templates/Main_Template->left_user()
+     */
+    public function loginForm($_form_data=[]){
+        /**
+         * Set the output variable
+         *
+         * The final output will be built as a variable called
+         * $text so create it ready to add to
+         *
+         * @var null
+         */
+        $text = '';
+
+        $content = '';
+
+        $content .= Php2Bs::bs_input_group ([
+            'group' => [
+                'class' => 'mb-3'
+            ],
+
+            'prepend' => [
+                'content' => '<i class="fas fa-user fa-sm"></i>',
+                'id' => 'username_field'
+            ],
+
+            'input' => [
+                //'class' => 'bg-info',
+                'type' => 'text',
+                'id' => 'Username',
+                'name' => 'username',
+                'placeholder' => 'Username, email or id',
+                'aria' => [
+                    'label' => 'Username',
+                    'describedby' => 'username_field',
+                ]
+            ],
+
+        ]); // Php2Html::div.form-group
+
+
+        $content .= Php2Bs::bs_input_group ([
+            'group' => [
+                'class' => 'mb-3'
+            ],
+
+            'prepend' => [
+                'content' => '<i class="fas fa-key fa-sm"></i>',
+                'id' => 'password_field'
+            ],
+
+            'input' => [
+                //'class' => 'bg-info',
+                'type' => 'password',
+                'id' => 'Password',
+                'name' => 'password',
+                'placeholder' => 'Password',
+                'aria' => [
+                    'label' => 'Password',
+                    'describedby' => 'password_field',
+                ]
+            ],
+
+        ]); // Php2Html::div.form-group
+
+
+
+        $content .= Php2Html::div ([
+            'class' => 'form-check',
+            'content' => Php2Html::checkbox ([
+                'id' => 'Remember',
+                'name' => 'remember',
+                'class' => 'form-check-input',
+            ]) // checkbox
+			.Php2Html::label ([
+                'for' => 'Remember',
+                'content' => 'Remember Login?',
+                'class' => 'mb-0',
+            ]) // label
+        ]); // Php2Html::div.form-group
+
+		if(!isset($_form_data['admin']) && !isset($_form_data['hide_help']))
+        {
+            $content .= Php2Html::a ([
+                'content' => 'Login Help',
+                'href' => '/Login/'
+            ]);
+        }
+
+        $content .= Php2Html::button ([
+            'button_type' => 'submit',
+            'class' => 'btn btn-primary btn-sm float-right',
+            'content' => 'Login',
+            'name' => 'login'
+        ]);
+
+        $text .= Php2Html::form([
+            'id' => '',
+            'action' => '',
+            'method' => 'post',
+            'class' => 'req-token',
+            'content' => $content
+        ]);
+
+        // Return the output
+        return $text;
+    } // loginForm()
+
+    /**
+     * Show the login form
+     *
+     * Displays the login form
+     *
+     * @return 	string 	Login Form
+     * @example /app/core/Templates/Main_Template->left_user()
+     */
+    public function logoutForm() {
+        /**
+         * Set the output variable
+         *
+         * The final output will be built as a variable called
+         * $text so create it ready to add to
+         *
+         * @var null
+         */
+        $text = '';
+
+        $content = '';
+
+        $content .= Php2Html::button ([
+            'button_type' => 'submit',
+            'class' => 'btn btn-primary btn-block btn-sm',
+            'content' => 'Logout',
+            'name' => 'logout'
+        ]);
+
+        $text .= Php2Html::form([
+            'id' => '',
+            'action' => '',
+            'method' => 'post',
+            'class' => 'req-token',
+            'content' => $content
+        ]);
+
+        // Return the output
+        return $text;
+    } // loginForm()
+
+    public function messages ($msg=null) {
+        $array = [
+            'login_banned' => [
+                'title' => 'Login failed',
+                'content' => 'You cannot login as you are banned.',
+                'alert_color' => 'info',
+            ],
+            'login_empty_fields' => [
+                'title' => 'Login failed',
+                'content' => 'Both fields must be filled in.',
+                'alert_color' => 'danger',
+            ],
+            'login_not_found' => [
+                'title' => 'Login failed',
+                'content' => 'The user was not found.',
+                'alert_color' => 'info',
+            ],
+            'login_not_pw' => [
+                'title' => 'Login failed',
+                'content' => 'The password was incorrect.',
+                'alert_color' => 'danger',
+            ],
+            'login_unverified' => [
+                'title' => 'Login failed',
+                'content' => 'You cannot login as you have not verified your account. Please check your email for the verification link.',
+                'alert_color' => 'info',
+            ],
+            'register_validation' => [
+                'title' => 'Registration unsuccesful',
+                'content' => 'Please correct the following errors...<br>{{errors}}',
+            ],
+
+
+
+            'admin_not_found' => [
+                'title' => 'User not found',
+                'content' => 'The User could not be found. '
+                . Php2Html::a(['content' => 'View List', 'href'=>'/Admin/Users/Listing']),
+                'alert_color' => 'info',
+                'dismissible' => false,
+            ],
+            'not_found' => [
+                'title' => 'User not found',
+                'content' => 'The User could not be found. ',
+                'alert_color' => 'info',
+                'dismissible' => false,
+            ],
+            'not_logged_in' => [
+                'title' => 'Not logged in',
+                'content' => 'You must be logged in to view this page.',
+                'alert_color' => 'warning',
+                'dismissible' => false,
+            ],
+            'register_success_auto' => [
+                'title' => 'Account Registered',
+                'alert_color' => 'success',
+                'content' => 'Your account has been created and you can now log in. For future reference, your user id is {{insert_id}}.',
+                'dismissible' => false,
+            ],
+            'register_success_email' => [
+                'title' => 'Account Registered',
+                'alert_color' => 'success',
+                'content' => 'Your account has been created. You will receive an email containing a link to complete the registration. For future reference, your user id is {{insert_id}}.',
+                'dismissible' => false,
+            ],
+            'register_success_manual' => [
+                'title' => 'Account Registered',
+                'alert_color' => 'success',
+                'content' => 'Your account has been created and is awaiting authorisation. For future reference, your user id is {{insert_id}}.',
+                'dismissible' => false,
+            ],
+
+
+
+
+            'send_link_fail' => [
+                'title' => 'Link not sent',
+                'alert_color' => 'danger',
+                'content' => 'Please enter something to search for.'
+            ],
+            'pw_email_sent' => [
+                'title' => 'Email sent',
+                'alert_color' => 'success',
+                'content' => [
+                    'The email has been sent to the account matching the details. Please click on the link in it to reset your password.',
+                    ' If you do do receive it, check your spam or junk folders. Otherwise, <a class="alert-link" href="/Members/ResetPassword">try again</a>..']
+            ],
+            'hash_fail' => [
+                'title' => 'Incorrect Parameters',
+                'alert_color' => 'warning',
+                'content' => 'We could not recognise the details. Please use the link from the email you received or enter your username, email or user id below to send another.'
+            ],
+            'validation_failed' => [
+
+            ],
+            'admin_create_success' => [
+                'title' => 'Account Created',
+                'alert_color' => 'success',
+                'content' => 'The account has been created.',
+            ],
+
+            'pw_update_success' => [
+                'title' => 'Password Updated',
+                'alert_color' => 'success',
+                'content' => 'Your password has been updated.',
+            ],
+            'admin_pw_update_success' => [
+                'title' => 'Password Updated',
+                'alert_color' => 'success',
+                'content' => 'The password has been updated.',
+            ],
+
+            'account_update_no_change' => [
+                'title' => 'Account Not Updated',
+                'alert_color' => 'info',
+                'content' => 'You did not change any data.',
+            ],
+            'admin_account_delete_success' => [
+                'title' => 'Account Deleted',
+                'alert_color' => 'success',
+                'content' => 'The account has been deleted.',
+                'dismissible' => false,
+            ],
+            'admin_account_update_success' => [
+                'title' => 'Account Updated',
+                'alert_color' => 'success',
+                'content' => 'The account has been updated.',
+            ],
+
+            'incorrect_verify_link' => [
+                'title' => 'Incorrect Link',
+                'alert_color' => 'success',
+                'content' => ['content'=>'The details provided did not match any accounts.','Please use the link provided in your registration email.'],
+            ],
+            'account_verified' => [
+                'title' => 'Account Verified',
+                'alert_color' => 'success',
+                'content' => ['content'=>'Your account has been verified.','You can now log in using the details you used to register.',Php2Html::a(['content'=>'Home', 'href'=>'/'])],
+                'dismissible' => false,
+            ],
+            'admin_user_unverified' => [
+                'title' => 'Account not verified',
+                'alert_color' => 'warning',
+                'content' => '',
+                'dismissible' => false,
+            ],
+            'admin_user_banned' => [
+                'title' => 'Account banned',
+                'alert_color' => 'danger',
+                'content' => '',
+                'dismissible' => false,
+            ]
+        ];
+
+        if($msg) {
+            return $array[$msg];
+        } else {
+            return $array;
+        }
+    }
+
+    /**
+     * Get the total most recent record
+     *
+     * @return int 	    Count of rows
+     */
+    public function mostRecent() {
+        // Select all records from the database
+        $_qry  =  $this->db()->query('SELECT * FROM '.$this->_db_table .' ORDER BY `joined` DESC LIMIT 1');
+
+        // Return a count of the records returned
+        return $_qry->first();
+    } // mostRecent()
+
+
+    /**
+     * Show the reset password  link form
+     *
+     * Displays the reset password link
+     *
+     * @return 	string Reset Password Link Form
+     */
+    public function resetPasswordForm($_form_data=[]){
+
+        /*
+            After a failed post, want to repopulate the form with
+            the posted data so the user does not have to fill it all in again, along with any required field validation styles.
+
+            We use an array called $_field_data to stored these ready for use
+            so create an empty version before doing the checks.
+         */
+        $_field_data = [];
+
+        /*
+            Create an array of the fields that will always be used in the form.
+
+            As we go along, we any others that we require, based on the type of
+            form we are using before we generate the form.
+         */
+        $_form_fields = [
+            'password', 'confirm_password'
+        ];
+
+        foreach ($_form_fields as $value) {
+            // Check for errors
+            if (isset($_form_data['errors'][$value])) {
+                // Errors found for the field so add invalid class
+                $_field_data[$value]['class'] = 'is-invalid';
+            } else {
+                // No errors found so if there is posted data, add the valid class
+                $_field_data[$value]['class'] = (Input::exists()) ? 'is-valid' : '';
+            }
+
+            // Check for posted data
+            if (Input::exists($value)) {
+                // There is posted data so set that as the value
+                $_field_data[$value]['val'] = Input::get($value);
+            } else {
+                // There is no posted data so see if a record has been passed in
+                if (isset($_form_data['data'])) {
+                    // There is a record passed in so set that as the value
+                    $_field_data[$value]['val'] = $_form_data['data']->$value;
+                } else {
+                    // There is no record passed in so set the value as blank
+                    $_field_data[$value]['val'] = '';
+                }
+            } // if (Input::exists($value))
+        } // foreach($_form_fields)
+
+
+        /**
+         * Set the output variable
+         *
+         * The final output will be built as a variable called
+         * $text so create it ready to add to
+         *
+         * @var null
+         */
+        $text = '';
+
+        $content = '';
+
+        $content .= Php2Bs::bs_form_row ([
+            //'class' => '',
+            'content' =>
+            # Password
+            Php2Bs::bs_form_group ([
+                'class' => 'col-md-6',
+                'content' => Php2Html::label ([
+                    'for' => 'Password',
+                    'content' => 'Password',
+                    'class' => 'mb-0',
+                ]) // Php2Html::label
+                .Php2Bs::bs_input_password ([
+                    'id' => 'Passsword',
+                    'name' => 'password',
+                    'placeholder' => 'Passsword',
+                    'class' => $_field_data['password']['class'],
+                    'value' => $_field_data['password']['val'],
+                    'aria' => [
+                        'describedby' => 'Password'
+                    ],
+                ]) // password
+            ]) // Php2Html::div.form-group
+            # Confirm_Password
+            .Php2Bs::bs_form_group ([
+                'class' => 'col-md-6',
+                'content' => Php2Html::label ([
+                    'for' => 'Confirm_Password',
+                    'content' => 'Confirm Password',
+                    'class' => 'mb-0',
+                ]) // Php2Html::label
+            .Php2Bs::bs_input_password ([
+                    'id' => 'Confirm_Password',
+                    'name' => 'confirm_password',
+                    'placeholder' => 'Confirm Password',
+                    'class' => $_field_data['confirm_password']['class'],
+                    'value' => $_field_data['confirm_password']['val'],
+                    'aria' => [
+                        'describedby' => 'Confirm_Password'
+                    ],
+                ]) // Php2Bs::bs_input_password
+            ]) // Php2Bs::bs_form_group
+        ]); // Php2Bs::bs_form_row
+
+        $content .= Php2Html::button ([
+            'button_type' => 'submit',
+            'class' => 'btn btn-primary btn-sm float-right',
+            'content' => 'Reset',
+            'name' => 'reset_password'
+        ]);
+
+        $text .= Php2Html::form([
+            'id' => '',
+            'action' => '',
+            'method' => 'post',
+            'class' => '',
+            'content' => $content
+        ]);
+
+        // Return the output
+        return $text;
+    } // loginForm()
+
+
+    /**
+     * Show the reset password  link form
+     *
+     * Displays the reset password link
+     *
+     * @return 	string Reset Password Link Form
+     */
+    public function resetPasswordLinkForm($_form_data=[]){
+        /**
+         * Set the output variable
+         *
+         * The final output will be built as a variable called
+         * $text so create it ready to add to
+         *
+         * @var null
+         */
+        $text = '';
+
+        $content = '';
+
+        $content .= Php2Bs::bs_input_group ([
+            'group' => [
+                'class' => 'mb-2'
+            ],
+
+            'prepend' => [
+                'class' => '',
+                'content' => '<i class="fas fa-user fa-sm"></i>',
+                'id' => 'username_field'
+            ],
+
+            'input' => [
+                'class' => '',
+                'type' => 'text',
+                'id' => 'Username',
+                'name' => 'username',
+                'placeholder' => 'Username, email or id',
+                'aria' => [
+                    'label' => 'Username',
+                    'describedby' => 'username_field',
+                ]
+            ],
+
+        ]); // Php2Html::div.form-group
+
+        $content .= Php2Html::button ([
+            'button_type' => 'submit',
+            'class' => 'btn btn-primary btn-sm float-right',
+            'content' => 'Send Email',
+            'name' => 'send_reset_email'
+        ]);
+
+        $text .= Php2Html::form([
+            'id' => '',
+            'action' => '',
+            'method' => 'post',
+            'class' => '',
+            'content' => $content
+        ]);
+
+        // Return the output
+        return $text;
+    } // loginForm()
+
+    /**
+     * Set the user cookie
+     * @param string $hash The hash value stored in gthe login cookie table
+     */
+    public function setCookie() {
+        // Create a new hash to store in the cookie
+        $_hash = Hash::unique();
+
+        // Check to see if this user already has a login hash - if so, something is wrong with logouts
+        $hashCheck = self::db()->get('login_cookie', array('user_id', '=', $this->data()->id));
+
+        // As long as there is no existing record, add one to the login_cookie table
+        if (!$hashCheck->count()) {
+
+            $this->db()->insert('login_cookie', array(
+                'user_id' => $this->data()->id,
+                'hash' => $_hash
+            ));
+        }
+        else
+        {
+            $_hash = $hashCheck->first()->hash;
+        }
+
+        Cookie::put(Settings::members()['user_cookie'], $_hash, Settings::members()['cookie_expiry']);
+    } // setUserCookie()
+
+    public function sendPasswordLinkMail ($email, $hash) {
+        // Insert the email and has as a record in user_hash
+        try {
+            SendMail::sendPasswordLink($email, $hash);
+        } catch(Exception $e) {
+        die();
+        }
+
+    } // sendVerifyMail()
+
+
+
+    /**
+     * Attempt a login
+     * @return Session/Cookie Login status and attempt information
+     */
+    public function tryLogin() {
+
+        /*
+            If we have a failed attempt at a login, followed by a succesfule one
+            from the full login page, we want to take the user back to the page
+            that they made the original attempt.
+
+            To do this, when a login is attempted, if $_SESSION['refer_page']
+            does not already exist and we are NOT on the full login page, we
+            we set it with the current URL to redirect back to.
+         */
+        if (!Session::exists('refer_page') && $_SERVER['REQUEST_URI'] !== '/Login/') {
+            Session::put('refer_page', $_SERVER['REQUEST_URI']);
+        }
+
+        /*
+            We check the login attempt in stages as there are certain things
+            that will mean a failure so we check those before we attempt to
+            process anything.
+
+            As soon as anything fails, we set the failure details as a session
+            and redirect to the full login page.
+         */
+
+        // Check if both fields have been filled
+        if (!Input::get('username')|| !Input::get('password')) {
+            // At least one field is empty so fail
+            $this->_logs->login_fail([
+                'user' => (!empty(Input::get('username'))) ? Input::get('username') : 'unknown',
+                'reason' => 'empty_field'
+            ]);
+            Session::put('message',$this->messages('login_empty_fields'));
+            Redirect::to('/Login/');
+        } else {
+            // Both fields have been filled so check that the username exists
+            if (!$this->find (Input::get('username'))) {
+                // The username does not exist so fail
+                $this->_logs->login_fail([
+                    'user' => Input::get('username'),
+                    'reason' => 'user_not_found'
+                ]);
+                Session::put('message',$this->messages('login_not_found'));
+                Redirect::to('/Login/');
+            } else {
+                // The username does exist check they are allowed to login
+                if($this->data()->status == '0') {
+                    // The user has not verified so fail
+                    $this->_logs->login_fail([
+                        'user' => Input::get('username'),
+                        'reason' => 'user_unverified'
+                    ]);
+                    Session::put('message',$this->messages('login_unverified'));
+                    Redirect::to('/Login/');
+                }
+
+                if($this->data()->status == '-1') {
+                    // The user is banned so fail
+                    $this->_logs->login_fail([
+                        'user' => Input::get('username'),
+                        'reason' => 'user_banned'
+                    ]);
+                    Session::put('message',$this->messages('login_banned'));
+                    Redirect::to('/Login/');
+                }
+
+                /*
+                    If we have got this far, the user exists, is verified and
+                    is not banned, so are allowed to login.
+
+                    We check the users password from the database against a string created using the posted password and the users
+                    salt from the database, via the make() function in core/Hash.php
+
+                    If the string matches the stored password, we log the user in.
+                 */
+                if ($this->data()->password === Hash::make(Input::get('password'), $this->data()->salt)) {
+
+                    /*
+                        The password is correct for the user so log them in by
+                        setting their id to the login session, as set in members()
+                        in core/Settings.php
+                     */
+                    Session::put(Settings::members()['login_session'], $this->data()->id);
+                    Session::put(Settings::members()['user_login_group'], $this->data()->group);
+
+                    $this->_logs->login_success();
+
+                    // If the user has ticked the 'Remember Me' box, store a login cookie.
+                    if (Input::exists(['name'=>'remember'])) {
+                        $this->setCookie();
+                    }
+
+                    /*
+                        If we are on the full login page and the original request
+                        came from any page another page, send them back there.
+
+                        If they started on the full login page, send them to the
+                        home page.
+                     */
+                    if($_SERVER['REQUEST_URI'] == '/Login/') {
+                        if(Session::exists('refer_page')) {
+                            Redirect::to(Session::get('refer_page'));
+                        } else {
+                            Redirect::to('/home');
+                        }
+                    }
+                } else {
+                    // The password is incorrect so fail
+                    $this->_logs->login_fail([
+                        'user' => Input::get('username'),
+                        'reason' => 'incorrect_pw'
+                    ]);
+                    Session::put('message',$this->messages('login_not_pw'));
+                    Redirect::to('/Login/');
+                }
+            }
+        }
+    }// tryLogin()
+
+    /**
+     * Attempt a logout
+     * @return Session/Cookie Login deletion
+     */
+    public function tryLogout() {
+
+        $this->_logs->logout_success();
+        Session::delete(Settings::members()['login_session']);
+        Session::delete(Settings::members()['user_login_group']);
+        // If a login cookie is set, delete that as well
+        if($this->hasCookie()) {
+            $this->deleteCookie();
+        }
+    }
+
+    /**
+     * [update description]
+     * @param  [type] $record    [description]
+     * @param  [type] $_postdata [description]
+     * @return [type]            [description]
+     */
+    public function update($record, $_postdata) {
+        if (!self::db()->update($this->_db_table, $record, $_postdata))
+        {
+            // The update was unsuccesful
+            throw new Exception('There was a problem updating the account!');
+            // Flash a generic error message
+            $this->crudFlash ('generic_error');
+
+            return false;
+        }
+
+        return true;
+    }
+
+
+
+    /**
+     * User form
+     *
+     * Single function to control both the registration and edit
+     * user forms in the front end and admin area.
+     *
+     * Several parts of this form get hidden depending on parameters
+     * passed in.
+     *
+     * The parameters that can be used are
+     * 'errors' an array errored field names and error messages
+     * following a failed post attempt.
+     * 'version' whether we are in create mode or edit mode.
+     * 'area' shows which part of the site we are on where 'user'
+     * referes to front end and 'admin' refers to backend.
+     * 'data' will contain the user information in edit mode.
+     *
+     * @param  array    $_params    Version, area and error details
+     * @return string               User create/edit form
+     */
+    public function userForm ($_params) {
+
+        /*
+            After a failed post, want to repopulate the form with
+            the posted data so the user does not have to fill it all in again, along with any required field validation styles.
+
+            We use an array called $_field_data to stored these ready for use
+            so create an empty version before doing the checks.
+         */
+        $_field_data = [];
+
+        /*
+            Create an array of the fields that will always be used in the form.
+
+            As we go along, we any others that we require, based on the type of
+            form we are using before we generate the form.
+         */
+        $_form_fields = [
+            'username', 'email', 'firstname', 'lastname'
+        ];
+
+        /*
+            If we are in create mode we need the password fields so add those
+            to $_form_fields. If front end also need the terms added.
+         */
+         nicePrint_r($_params, '$_params');
+        if($_params['version'] == 'create') {
+            $_form_fields[] = 'password';
+            $_form_fields[] = 'confirm_password';
+
+            if($_params['area'] == 'user') {
+                $_form_fields[] = 'terms';
+            }
+        }
+
+        /*
+            We now loop through the form fields array to check for validation
+            and data.
+
+            First we check to see if there is a matching value in the 'errors'
+            parameter passed in to the function. If there is we set the class
+            for that field in $_field_data to 'is-invalid'. If there is no
+            matching value, if there is any post data, we assume it must have
+            been succesful so set the class to 'is-valid', otherwise we just
+            leave it blank.
+
+            Then we check for any posted data, from a failed form submit. If
+            there is a match, we set it to the 'val' for that field in
+            $_field_data. If there is no match, we check to see if a record has been passed in via the 'data' parameter passed in to the function (create mode).
+            Again, if there is a match, we add that to 'val', otherwise we are left
+            with nothing to use as 'val' so leave it blank.
+
+            When creating the actual input for the field, we add anything in 'class'
+            to the input class="" and the 'val' to the value="".
+        */
+        foreach ($_form_fields as $value) {
+            // Check for errors
+            if (isset($_params['errors'][$value])) {
+                // Errors found for the field so add invalid class
+                $_field_data[$value]['class'] = 'is-invalid';
+            } else {
+                // No errors found so if there is posted data, add the valid class
+                $_field_data[$value]['class'] = (Input::exists()) ? 'is-valid' : '';
+            }
+
+            // Check for posted data if an account update has been attempted
+            if (Input::exists($value) && trim(Input::get($value)) !== false) {
+
+                // There is posted data so set that as the value
+                $_field_data[$value]['val'] = Input::get($value);
+            } else {
+                // There is no posted data so see if a record has been passed in
+                if (isset($_params['data'])) {
+                    // There is a record passed in so set that as the value
+                    $_field_data[$value]['val'] = $_params['data']->$value;
+                } else {
+                    // There is no record passed in so set the value as blank
+                    $_field_data[$value]['val'] = '';
+                }
+            } // if (Input::exists($value))
+        } // foreach($_form_fields)
+
+        /*
+            We now have everything we need so can start building the form.
+
+            We create the content first and then pass it into the form once we have
+            all of the fields created.
+
+            To start, we create an empty variable to hold the content and then add
+            to it as we go along.
+         */
+        $content = '';
+
+        // Add the Username and Email form row
+        $content .= Php2Bs::bs_form_row ([
+            'content' =>
+            # Username
+            Php2Bs::bs_form_group ([
+                'class' => 'col-md-6',
+                'content' => Php2Html::label ([
+                    'for' => 'Username',
+                    'content' => 'Username',
+                    'class' => 'mb-0',
+                ]) // Php2Html::label
+                .Php2Bs::bs_input_text ([
+                    'id' => 'Username',
+                    'name' => 'username',
+                    'placeholder' => 'Username',
+                    'class' => $_field_data['username']['class'],
+                    'value' => $_field_data['username']['val'],
+                    'aria' => [
+                        'describedby' => 'Username'
+                    ],
+                ]) // Php2Bs::bs_input_text
+            ]) // Php2Bs::bs_form_group
+            # Email
+            .Php2Bs::bs_form_group ([
+                'class' => 'col-md-6',
+                'content' => Php2Html::label ([
+                    'for' => 'Email',
+                    'content' => 'Email',
+                    'class' => 'mb-0',
+                ]) // Php2Html::label
+                .Php2Bs::bs_input_email ([
+                    'id' => 'Email',
+                    'name' => 'email',
+                    'placeholder' => 'Email',
+                    'class' => $_field_data['email']['class'],
+                    'value' => $_field_data['email']['val'],
+                    'aria' => [
+                        'describedby' => 'Email'
+                    ],
+                ]) // Php2Bs::bs_input_email
+            ]) // Php2Bs::bs_form_group
+        ]); // Username and password row
+
+        // First and Last Names Row
+        $content .= Php2Bs::bs_form_row ([
+            //'class' => '',
+            'content' =>
+            # Firstname
+            Php2Bs::bs_form_group ([
+                'class' => 'col-md-6',
+                'content' => Php2Html::label ([
+                    'for' => 'Firstname',
+                    'content' => 'Firstname',
+                    'class' => 'mb-0',
+                ]) // Php2Html::label
+                .Php2Bs::bs_input_text ([
+                    'id' => 'Firstname',
+                    'name' => 'firstname',
+                    'placeholder' => 'Firstname',
+                    'class' => $_field_data['firstname']['class'],
+                    'value' => $_field_data['firstname']['val'],
+                    'aria' => array (
+                        'describedby' => 'Firstname'
+                    ),
+                ]) // Php2Bs::bs_input_text
+            ]) // Php2Bs::bs_form_group
+            # Lastname
+            .Php2Bs::bs_form_group ([
+                'class' => 'col-md-6',
+                'content' => Php2Html::label ([
+                    'for' => 'Lastname',
+                    'content' => 'Lastname',
+                    'class' => 'mb-0',
+                ]) // Php2Html::label
+                .Php2Bs::bs_input_text ([
+                    'id' => 'Lastname',
+                    'name' => 'lastname',
+                    'placeholder' => 'Lastname',
+                    'class' => $_field_data['lastname']['class'],
+                    'value' => $_field_data['lastname']['val'],
+                    'aria' => array (
+                        'describedby' => 'Lastname'
+                    ),
+                ]) // Php2Bs::bs_input_text
+            ]) // Php2Bs::bs_form_group
+        ]); // First and last names row
+
+        // Password Row - only if we are in create mode
+        if($_params['version'] == 'create') {
+            // Password Row
+            $content .= Php2Bs::bs_form_row ([
+                //'class' => '',
+                'content' =>
+                # Password
+                Php2Bs::bs_form_group ([
+                    'class' => 'col-md-6',
+                    'content' => Php2Html::label ([
+                        'for' => 'Password',
+                        'content' => 'Password',
+                        'class' => 'mb-0',
+                    ]) // Php2Html::label
+                    .Php2Bs::bs_input_password ([
+                        'id' => 'Passsword',
+                        'name' => 'password',
+                        'placeholder' => 'Passsword',
+                        'class' => $_field_data['password']['class'],
+                        'value' => $_field_data['password']['val'],
+                        'aria' => [
+                            'describedby' => 'Password'
+                        ],
+                    ]) // password
+                ]) // Php2Html::div.form-group
+                # Confirm_Password
+                .Php2Bs::bs_form_group ([
+                    'class' => 'col-md-6',
+                    'content' => Php2Html::label ([
+                        'for' => 'Confirm_Password',
+                        'content' => 'Confirm Password',
+                        'class' => 'mb-0',
+                    ]) // Php2Html::label
+                .Php2Bs::bs_input_password ([
+                        'id' => 'Confirm_Password',
+                        'name' => 'confirm_password',
+                        'placeholder' => 'Confirm Password',
+                        'class' => $_field_data['confirm_password']['class'],
+                        'value' => $_field_data['confirm_password']['val'],
+                        'aria' => [
+                            'describedby' => 'Confirm_Password'
+                        ],
+                    ]) // Php2Bs::bs_input_password
+                ]) // Php2Bs::bs_form_group
+            ]); // Php2Bs::bs_form_row
+        } // Password row
+
+        /*
+            If we are in edit mode in the admin area, we can also change the
+            usergroup and the users status (active, banned, unverified) from
+            the same form so we have to add them to $content.
+
+            We create them individually as  $group_select and $status_select
+            before passing them into the form.
+         */
+        if($_params['version'] == 'edit' && $_params['area'] == 'admin') {
+
+            // Open up the Usergroups model
+            $groups = new M_Usergroups ();
+
+            /*
+                Create an empty $options variable to hold the contents of the
+                select menu that we will use to choose a group.
+             */
+            $options = '';
+
+            /*
+                Loop through the list of usergroups and for each one, create
+                and <option> tag to go inside the select menu and add it
+                to $content.
+             */
+            foreach ($groups->listing() as $key => $value) {
+                $options .= Php2Html::option ([
+                    'content' => $value->group_name,
+                    'value' => $value->id,
+                    'is_selected' => ($value->id == $_params['data']->group) ? true: false,
+                ]);
+            }
+
+            /*
+                Create the select menu, using the $options variable and
+                assign it to $group_select.
+             */
+            $group_select = Php2Bs::bs_select ([
+                'content' =>$options,
+                'id' => 'GroupName',
+                'name' => 'group'
+            ]);
+
+            /*
+                We now so exactly the same for the $status_select, except
+                that the listing is a hand built array that we create
+                directly in the foreach
+             */
+            $options = '';
+            foreach (['-1' =>'Banned', '0' => 'Unverified', '1' => 'Active'] as $key => $value) {
+
+                $options .= Php2Html::option ([
+                    'content' => $value,
+                    'value' => $key,
+                    'is_selected' => ($key == $_params['data']->status) ? true: false,
+                ]);
+            }
+
+            $status_select =  Php2Bs::bs_select ([
+                'content' =>$options,
+                'id' => 'StatusName',
+                'name' => 'status'
+            ]);
+
+            // Now add both dropdowns to the form
+            $content .= Php2Bs::bs_form_row ([
+                'content' =>
+                # User Group
+                Php2Bs::bs_form_group ([
+                    'class' => 'col-md-6',
+                    'content' => Php2Html::label ([
+                        'for' => 'GroupName',
+                        'content' => 'User Group',
+                        'class' => 'mb-0',
+                    ]) // Php2Html::label
+                    .$group_select
+                ]) // Php2Html::div.form-group
+
+                # Status
+                .Php2Bs::bs_form_group ([
+                    'class' => 'col-md-6',
+                    'content' => Php2Html::label ([
+                        'for' => 'StatusName',
+                        'content' => 'Status',
+                        'class' => 'mb-0',
+                    ]) // Php2Html::label
+                .$status_select
+                ]) // Php2Bs::bs_form_group
+            ]); // Php2Bs::bs_form_row
+        } // Password row
+
+        /*
+            If we are in front end create mode, we require both the Accept Terms
+            checkbox as well as the submit button, otherwise we just need the
+            submit button.
+
+            As we do not know if we will need both, we create an empty $bottom_row
+            variable and add what it requires, before passing it into a form row.
+         */
+        $bottom_row = '';
+
+        /*
+            If we are in front end create mode, we need to create a 'terms' checkbox an its parameters.
+         */
+        if(in_array("terms", $_form_fields)) {
+            // Create the parameters for the checkbox
+            $checkbox_array = [
+                'id' => 'Terms',
+                'name' => 'terms',
+                'placeholder' => 'Terms',
+                'class' => $_field_data['terms']['class'],
+                'aria' => [
+                    'describedby' => 'Terms'
+                ],
+            ];
+
+            // If it was checked on a previous post attempt, re-check it
+            if($_field_data['terms']['val']) {
+                $checkbox_array['checked'] = '';
+            } // if($_field_data['terms']['val'])
+
+            // Create the terms form group with the parameters set above
+            $bottom_row .= Php2Bs::bs_form_group ([
+                'class' => 'col-md-6',
+                'content' =>
+                # Terms
+                Php2Bs::bs_form_check ([
+                    //'class' => '',
+                    'content' => Php2Bs::bs_form_check_input (
+                        $checkbox_array
+                    ) // Php2Bs::bs_form_check_input
+                    .Php2Bs::bs_form_check_label ([
+                        //'class' => '',
+                        'for' => 'Terms',
+                        'content' => 'Accept Terms Below',
+                    ]) // Php2Bs::bs_form_check_label
+                ]) // Php2Bs::bs_form_check
+            ]); // Php2Bs::bs_form_group
+        } // if(in_array("terms", $_form_fields))
+
+        /*
+            The submit button also comes in a form-group but as we always want it to
+            appear on the right, we give it a class of 'col-md-6' when the terms
+            form-group is also required (that also uses 'col-md-6'), and 'col-12'
+            when we are showing just the button.
+
+            We set this to $button_group_size, based on whether or not 'terms'
+            has been added to the $_form_fields array.
+         */
+        $button_group_size = (in_array("terms", $_form_fields)) ? 'col-md-6': 'col-12';
+
+        // Set the details for the submit button based on the version
+        if($_params['version'] == 'create') {
+            $button_name = 'register';
+            $button_text = 'Register';
+
+        } else {
+            $button_name = 'update_user';
+            $button_text = 'Update';
+        }
+
+        $content .= Php2Bs::bs_form_row ([
+            'content' => $bottom_row.Php2Bs::bs_form_group ([
+                'class' => $button_group_size,
+                'content' => Php2Bs::bs_button ([
+                    'button_type' => 'submit',
+                    'color' => 'primary',
+                    'size' => 'sm',
+                    'class' => 'float-right',
+                    'content' => $button_text,
+                    'name' => $button_name
+                ]) // Php2Bs::bs_button
+            ])// Php2Bs::bs_form_group
+        ]); // Bottom row
+
+        // Return the form
+        return Php2Html::form([
+            'id' => '',
+            'action' => '',
+            'method' => 'post',
+            'class' => 'req-token',
+            'content' => $content
+        ]); //  Php2Html::form
+
+    } // userForm ()
+
+
+    public function validate () {
+
+    }
+
+
+    /**
+     * Set the validation rules
+     *
+     * Sets the rules for any form fields the class uses when being
+     * processed.
+     *
+     * See the core/Validate.php class for information how these work.
+     *
+     * @return array Validation rules
+     */
+    public function validation_rules() {
+        return[
+            'username' => [
+                'required' => true,
+                'min' => 6,
+                'max' => 20,
+                'preg_match' => '/^[a-zA-Z]\w*[a-zA-Z0-9_]$/',
+                'unique' => 'users',
+                'error_text' => 'Usernames must be between 6 and 20 characters, only using letters, numbers and underscores.'
+            ],
+            'email' => [
+                'required' => true,
+                'filter' => "email",
+                'unique' => 'users',
+                'error_text' => 'You must use a valid and accesible email address.'
+            ],
+            'firstname' => [
+                'required' => true,
+            ],
+            'lastname' => [
+                'required' => true,
+            ],
+            'password' => [
+                'required' => true,
+                'min' => 6
+            ],
+            'confirm_password' => [
+                'required' => true,
+                'matches' => 'password',
+                'error_text' => 'Confirm must match'
+            ],
+            'terms' => [
+                'required' => true,
+                'error_text' => 'You must read and accept the temrs and conditions'
+            ]
+        ];
+    }
+
+
+
+}
+
+
+
+
+
+
+
+
+
+
+======================================================================================
+
+
+
+
+
+
+
+
+
+<?php
+
+/**
+ * Users View
+ *
+ * There is full commenting on how the views are structured and
+ * all of the parameters that can be passed used in app/views/home/index.
+ *
+ * As a result, this file only comments or includes anything that is
+ * different from that file.
+ *
+ * @package 	Core
+ * @author  	Steve Ball <steve@follyball.co.uk>
+ * @copyright 	Copyright (c) 2018 Steve Ball <steve@follyball.co.uk>
+ * @example 	http://yoursite/Admin/Members
+ * @example 	http://yoursite/Admin/Members/Listing
+ * @example 	http://yoursite/Admin/Members/{Username}
+ *
+ */
+
+//Set the parameters for the page
+$params['layout'] = 'three-col';
+$params['page_title'] = (isset($data['page_name'])) ? $data['page_name'] : null;
+$params['page_subtitle'] = (isset($data['page_subtitle'])) ? $data['page_subtitle'] : null;
+$params['meta'] = ['description' => 'Description set in page'];
+
+$content = '';
+
+// Show any messages that have been sent ot the page as an alert
+$content .= showPageAlerts ($data);
+
+# Show the required data based on passed in page type
+if($data['page_type'] == 'edit') {
+    /*
+        We always need the forms, even after posting so just add
+        them to the content.
+     */
+    $content .= Php2Bs::bs_card ([
+        'header' => [
+            'content' => 'Update Profile'
+        ],
+        'class' => 'border-dark bg-light mb-1',
+        'body' => [
+            'content' => $data['edit_form'],
+            'class' => '',
+        ],
+    ]);// bs_card edit form
+
+
+    $content .= Php2Bs::bs_card ([
+        'header' => [
+            'content' => 'Change Password'
+        ],
+        'class' => 'border-dark bg-light mb-1',
+        'body' => [
+            'content' => $data['password_form'],
+            'class' => '',
+        ],
+    ]);// bs_card change password
+} // $data['page_type'] == 'edit'
+
+if($data['page_type'] == 'reset_password') {
+    /*
+        If we need to show the form, it is passed in from the controller.
+
+        Everything else is passed in as a status and added via the
+        showPageAlerts () function aboce
+     */
+    if($data['form']) {
+        $text = Php2Html::p([
+            'content' => 'Please enter your username, the email you registered with or your user id to receive an email containing a link to reset your password.'
+        ]);
+        $content .= Php2Bs::bs_card ([
+            'class' => 'border-dark bg-light mb-1',
+            'body' => [
+                'content' => $text.$data['form'],
+                'class' => '',
+            ],
+        ]);// bs_card edit form
+    }
+} // $data['page_type'] == 'reset_password'
+
+if($data['page_type'] == 'register') {
+    /*
+        We only show the form if it has been passed in from the
+        controller and add the terms of registration from settings.
+     */
+    if (isset($data['form'])) {
+        $terms = Settings::registration_terms ();
+
+        $content .= Php2Bs::bs_card ([
+            'class' => 'border-dark bg-light mb-1',
+            'body' => [
+                'content' => $data['form']
+                            .$terms,
+                'class' => '',
+            ],
+        ]);// bs_card registration form
+    } // if $data->form
+} // $data['page_type'] == 'register'
+
+if($data['page_type'] == 'profile') {
+
+    /*
+        We only show the profile if the user was found in the controller
+        function so we only add to the content if the status is not
+        'admin_not_found'
+     */
+    if(!isset($data['status']) || $data['status'] !== 'not_found') {
+
+        # TODO Replace with proper links
+        $content .= Php2Html::a (
+            array(
+                'content' => 'Listing',
+                'href' => '/Users/Listing',
+            )
+        ).' | '.Php2Html::a (
+            array(
+                'content' => 'Overview',
+                'href' => '/Users',
+            )
+        );
+
+        // The user was found so start building the output as a variable
+        $profile = 'Full Name : ' . $data['userdata']['firstname'].' '.$data['userdata']['lastname'];
+        $profile .= '<hr>';
+
+        $join_date = new DateTime($data['userdata']['joined']);
+        $profile .= 'Joined : ' . $join_date->format('l, jS F, Y \a\t g:ia');
+
+        $profile .= '<hr>';
+        $profile .= 'User Group : ' . $data['userdata']['group'];
+
+        // Add to the content by passing $profile into a card
+        $content .= Php2Bs::bs_card ([
+            'class' => 'border-primary bg-light mb-1',
+            'body' => [
+                'content' => $profile,
+            ],
+        ]);// bs_card profile
+    } // if user found
+} // $data['page_type'] == 'profile'
+
+# TODO Better overview page
+if($data['page_type'] == 'overview') {
+    ###################
+    # Temporary content
+    ###################
+    $content .= Php2Html::a ([
+        'content' => 'Listing',
+        'href' => '/Users/Listing',
+    ]);
+
+    $latest_user_date = new DateTime($data['latestuser']->joined);
+
+    $content .= Php2Bs::bs_card ([
+        'class' => 'border-primary bg-light mb-1',
+        'header' => [
+            'content' => 'User Details'
+        ],
+        'body' => [
+            'content' => Php2Html::li ([
+                'content' => 'Total Users : ' . $data['usercount'],
+                'class' => 'list-group-item border-warning'
+            ])
+            .Php2Html::li ([
+                'content' => 'Latest User : ' . $data['latestuser']->username . ' (' . $latest_user_date->format('d/m/Y g:ia') . ')',
+                'class' => 'list-group-item border-info'
+
+            ]),
+        ],
+    ]);// bs_card
+} // $data['page_type'] == 'overview'
+
+if($data['page_type'] == 'listing') {
+
+    /*
+        Loop through the list passed to the view and for each one,
+        replacing the 'username' element with a link to that
+        elements edit page.
+
+        We also replace the 'joined' element with a long date
+        and time using the php DateTime function.
+
+     */
+    foreach ($data['list'] as $key => $value) {
+
+        $data['list'][$key]->username = Php2Html::a (
+            array(
+                'content' => $value->username,
+                'href' => '/Members/'.$value->username
+
+            )
+        );
+
+        $data['list'][$key]->full_name = $value->firstname.' '.$value->lastname;
+
+        $join_date = new DateTime($value->joined);
+        $data['list'][$key]->joined = $join_date->format('d/m/Y g:ia');
+
+    } // foreach $data->list
+
+    // Build the table
+    $table = Php2Html::make_table ([
+        'columns' => [
+            'username' => [
+                'alias' => 'Username',
+                'th_class' => 'bg-dark text-light',
+                'global_class' => 'text-danger'
+            ],
+            'full_name' => [
+                'alias' => 'Full Name',
+                'th_class' => 'bg-dark text-light',
+                'td_class' => 'text-info'
+            ],
+            'joined' => [
+                'alias' => 'Joined',
+                'th_class' => 'bg-dark text-light',
+            ],
+        ],
+        // The listing is an object so convert it to an array
+		'data' => objectToArray($data['list']),
+        'settings' => [
+            'show_header' => true,
+            //'border' =>'1',
+            'class' =>'table mb-0'
+        ]
+    ]); // make table()
+
+    // Add the table to the content inside a card
+    $content .= Php2Bs::bs_card ([
+        'class' => 'border-primary bg-light mb-1',
+        'body' => [
+            'content' => $table,
+            'class' => 'p-0',
+        ],
+    ]);// bs_card table
+} // $data['page_type'] == 'listing'
+
+
+// Pass the details to the template
+$template = new T_Main ($content,$params);
+
+
+
+
+
+
+
+
+
+
+======================================================================================
+
+
+
+
+
+
+
+
+
+<?php
+
+/**
+ * Home Page View
+ *
+ * This only controls the view from the home page of the site.
+ *
+ * As very little is actually done in this file, we use it as the guidline for
+ * all other views and as a result, there will be more commenting in this view
+ * than any others, including things that might not get used here but might get
+ * used elsewhere.
+ *
+ * @package 	Core
+ * @author  	Steve Ball <steve@follyball.co.uk>
+ * @copyright 	Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
+ * @example 	/app/controllers/home.php->index()
+ * @link 		http://yoursite/
+ *
+ */
+
+/*
+    Any information passed to the view from the controller will be available as as a variable called $data. This will contain all of the required information but without any formatting (mainly) as this will be done in this file.
+
+    You can uncomment the first line below to see any data passed in as a formatted array. There are also lines that can be uncommented to show any $_POST or $_SESSION data in the same way.
+
+    The nicePrint_r() function that these use can be found in '/src/functions/globals.php'.
+*/
+// nicePrint_r($data, 'Data');
+// nicePrint_r($_POST, 'Post');
+// nicePrint_r($_SESSION, 'Session');
+
+
+/**
+ * Set the parameters for the page
+ *
+ * As well as the content to display, there are some other parameters that
+ * the call to the template also accepts. These are stored in an array called
+ * $params and can either be set within this file, or passed in from the
+ * controller.
+ *
+ * This example file contains all available parameters to give an explanation
+ * of what can be used an how to use it, some of which are set within this file,
+ * some of which are passed from the controller.
+ */
+
+/*
+    Set the page version.
+
+    The default template system provides several different layouts that can be
+    used, within a standard wrapper.
+
+    The layouts can be edited and new ones added in the layout_switcher() function
+    in the called template file and the demos ones are
+    'full-width' - single column layout
+    'left-col'  - two column layout with left sidebar and content to the right
+    'right-col' - two column layout with right sidebar and content to the left
+    'three-col' - three column layout with both sidebars and content in the middle
+    'test' - a playground for testing styles.
+
+    This parameter can be ommitted and if so, the layout will default to the
+    default case within the switch statement in layout_switcher().
+
+    In this demo, the layout is set within this file, but can be passed in from
+    the controller.
+ */
+$params['layout'] = 'full-width';
+
+/*
+    Set the page title and subtitle.
+
+    To set the page title, which will be shown at the top of the page and also part of the <title> in <head> set it to $params['page_title'].
+
+    In this demo, we are sending the title from the controller as
+    'page_name' but have set it to only populate $params['page_title'] if
+    it has been passed in. You can set it manually in this file.
+
+    This parameter can be ommitted and if so, no title or subtitle will
+    show and the <title> in <head> will not include anything and default
+    to whatever is set as the $title variable in the head() function in
+    the Base template.
+
+    To set a subtitle for the page set a $params['page_subtitle']. This
+    works in exactly the same way as the page title other than it does not
+    affect the  <title> in <head> and will not show if a page title is not
+    set. Again, for this demo, we are assuming it to be from the controller, this time as 'page_subtitle', and leave it empty if it does not exist.
+
+ */
+$params['page_title'] = (isset($data['page_name'])) ? $data['page_name'] : null;
+$params['page_subtitle'] = (isset($data['page_subtitle'])) ? $data['page_subtitle'] : null;
+
+/*
+    Override meta tags
+
+    You can override any of the default meta tags stored in the meta_tags()
+    function in /app/core/Settings.php by including them in via $params['meta'].
+
+    You can override as many as needed and simply created a key/value pair for
+    each one that you want to override.
+
+    It would be recommended to set this in the $data passed to this page from
+    the controller, espcially if this view is being used for multiple page
+    types and content.
+
+    If you do not need to override any, you can omit the variable completely.
+ */
+$params['meta'] = ['description' => 'Description set in page'];
+
+/*
+    Add page specific css
+
+    You can any page specific stylesheets stored called from the css() function in /app/core/Settings.php by including them in via $params['css'].
+
+    These are set in a multidimensional array and return the full stylesheet link
+    as a string.
+    When setting, simply set the path to the stylesheet separated by slashes so
+    'remote/bootstrap/v4_beta' would return the string at
+    'remote' => 'bootstrap' => 'v4_beta'.
+
+    If you do not need to add any css, you can omit the variable completely.
+
+    In this demo, the additional css is set within this file, rather than passed
+    in from the controller.
+ */
+$params['css'] = [
+    'remote/simple-line-icons',
+    #'path/to/css2',
+    #'path/to/css3'
+];
+
+/*
+    Add page specific js
+
+    You can any page specific stylesheets stored called from the js() function in /app/core/Settings.php by including them in via $params['js'].
+
+    These are set in a multidimensional array and return the full script link
+    as a string.
+    When setting, simply set the path to the stylesheet separated by slashes so
+    'remote/bootstrap/v4' would return the string at
+    'remote' => 'bootstrap' => 'v4'.
+
+    If you do not need to add any css, you can omit the variable completely.
+
+    In this demo, the additional css is set within this file, rather than passed
+    in from the controller.
+ */
+$params['js'] = [
+    'remote/jquery_ui',
+    #'path/to/js2',
+    #'path/to/js3'
+];
+
+/*
+    With the index page, we use it like a landing page in that we want it to still keep the navigation menu and footer that other areas of the site use but not have the banner at the top of the page, as well as giving the whole page a dark background and light text.
+
+    We do this by using two extra $params.
+    'hide_banner' will not show the the header at the top of the page is set to true. If set to false or not set at all, the banner will show.
+    'body_class' allows you to add classes to the opening body tag. In this case we just set the bg and text.
+*/
+$params['hide_banner'] = true;
+$params['body_class'] = 'bg-dark text-light';
+
+/*
+    Everything that needs to be displayed on this page is currently created here against a variable called $content. This will change so this is only here as a temporary filler.
+ */
+ $content = '';
+
+ /*
+    Show any messages that have been sent ot the page as an alert.
+
+    If there are any user messages that need to be shown, such as success or failure messages following a form post, we set the paramaters of it in the controller and pass it through as $data['messages']. This, itself, gets populated from details in a function called messages() in the current model being used.
+
+    Each model has it's own messages() function to make the messages relevant to the area of the site being viewed and a full explanation of how they work can be found in '/app/models/M_Users.php'.
+
+    When we require one of these messages, we set it to $data['messages'] and that will now contain an array of values that can be used as an alert. Rather than checking to see if $data['message'] exists on every view, we simply pass all of $data into the showPageAlerts () function in '/app/core/global.php' and that checks if there is message to show. There is a full commenting of showPageAlerts () to explain exactly how it works and how, as an alternative, we can use $_SESSIONS to pass the message.
+ */
+ $content .= showPageAlerts ($data);
+
+ /*
+    Finally, we add the actual content that needs to be displayed on the page. In this example we currently only show some hardcoded stuff so that will need improving.
+
+    TODO: Replace the below with something more useful and amend the comments.
+  */
+
+ $content .= '<h4>Holding area for all the new stuff!</h4>';
+ $content .= '<p>As we are currently in the process of moving everything across to a new system, as well as adding the new features, we have had to create an interim area.</p>';
+ $content .= '<p>Currently, for most script generation, you would use the Original Selenium folders as usual. For Pet, you can use the new, faster method in the interim site. Anything else will be going in the new hub site..</p>';
+ $content .= '<div class="card mb-3 border-primary text-dark w-100">';
+ $content .= '    <h4 class="card-header bg-primary text-light">';
+ $content .= '    Links';
+ $content .= '    </h4>';
+ $content .= '  <div class="card-body">';
+ $content .= '  <b>Original Selenium Folders</b><br>';
+ $content .= '    <a href="http://10.60.151.86/current/Selenium" target="_blank">Current</a>' ;
+ $content .= ' | ';
+ $content .= '    <a href="http://10.60.151.86/regression/Selenium" target="_blank">Regression</a>' ;
+ $content .= ' | ';
+ $content .= '    <a href="http://10.60.151.86/scripting1/Selenium" target="_blank">Scripting 1</a>' ;
+ $content .= ' | ';
+ $content .= '    <a href="http://10.60.151.86/scripting2/Selenium" target="_blank">Scripting 2</a>' ;
+
+ $content .= '  <br><br><b>Interim site</b><br>';
+ $content .= '    <a href="/dev/Selenium" target="_blank">Home Page</a>' ;
+
+ $content .= '  <br><br><b>New Hub site</b><br>';
+ $content .= '    <a href="/Selenium" target="_blank">Home Page</a>' ;
+ $content .= '   | ';
+ $content .= '    <a href="/Admin" target="_blank">Admin</a>' ;
+ $content .= '  <br><br><b>Other Links</b><br>';
+ $content .= '    <a href="http://10.60.151.86/phpmyadmin" target="_blank">Database</a>' ;
+
+ $content .= '  <br><br><b>File Locations</b>';
+ $content .= '    <br>WebOpts MVT list - \\\\ZEUS\\Ecommerce\\Webopt MVT folder\\Agendas\\' ;
+ $content .= '    <br>Firefox 54.0.1 Installation - \\\\10.60.151.86\\files\\Firefox Installs\\' ;
+
+ $content .= '  <br><br><b>Known Issues</b>';
+ $content .= '  <br>Remember me function causes count() on boolean error in M_Users line 991(ish)' ;
+ $content .= '  <br>Main template edit link goes to /Members/ instead of /Users/' ;
+
+ $content .= '  </div>';
+ $content .= '</div>';
+
+
+/**
+ * Pass the details to the template
+ *
+ * All that is left to do is pass the information that we have created above,
+ * through to the template that we are using for this view.
+ *
+ * In this instance, we are using the Main template at /'app/core/Templates/T_Main.php'.
+ *
+ * @var string 	    $content    The actual page relevant content to be shown
+ * @var array 	    $params     Any other required page settings.
+ */
+new T_Main ($content,$params);
+
+
+
+
+
+
+
+
+
+
+=====================================================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<?php
+
+/**
+ * Global functions
+ *
+ * Functions that can be used anywhere within the site, both front end and backend
+ *
+ * @package Core
+ * @author  Steve Ball <steve@follyball.co.uk>
+ * @copyright Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
+ */
+
+
+//  Call in the seperate autoload class
+include_once 'autoload_class.php';
+
+/**
+ * Sanitise html string
+ *
+ * Sanitizes html before passing to the browser or inserting into a database
+ * @param  string $string The string to sanitise
+ * @return string         Sanitised string
+ */
+function escape($string) {
+
+    return htmlentities($string, ENT_QUOTES, 'ISO-8859-15');
+} // escape
+
+/**
+ * Prettify an array
+ *
+ * Shows and array in a more easy-to-read format.
+ *
+ * @param  array        $array  The array to prettify
+ * @param  string/null  $title  Optional title to show (useful when used multiple times)
+ * @return string        Formatted array
+ */
+function nicePrint_r ($array, $title = null) {
+    echo '<pre>';
+    echo (isset($title)) ? '<h1>'.$title.'</h1>': '';
+    print_r($array);
+    echo '</pre>';
+
+} // nicePrint_r ()
+
+/**
+ * Include files into the template
+ *
+ * Reads the extra required css/js files called from a view when calling the
+ * templates and returns them based on the reference in config_files/css.php or
+ * config_files/js.php.
+ *
+ * These are only called in the template files and will be used when a view requires
+ * a one-off include of a css or js file - forexample a datepicker or WYSIWIG.
+ *
+ * @param  string   $include    Path to the and value in the config file
+ * @param  string   $type       Type of request (css/js)
+ * @return string         File includes
+ */
+function getIncludeFiles ($include, $type) {
+    if(isset($include[$type])) {
+        foreach ($include[$type] as $value) {
+            echo Globals::get($value);
+        }
+    }
+} // getIncludeFiles ()
+
+/**
+ * Slug or deslug a string
+ *
+ * Replaces all spaces in a string with underscores in forward mode and replaces
+ * all underscores with spaces in reverse mode.
+ *
+ * Example
+ *
+ * $string = 'This is a string';
+ * $newstring = slugify ($string)
+ *
+ * $newstring now equals 'This_is_a_string'
+ *
+ * $reversestring = slugify ($string, $direction = 'reverse')
+ *
+ * $reversestring now equals 'This is a string'
+ *
+ * @param  string   $string    The string to slug/deslug
+ * @param  string   $direction Optional direction
+ * @return string         Slugged/deslugged string
+ */
+function slugify ($string, $direction = 'forward') {
+	if ($direction == 'forward')
+	{
+		return str_replace(" ", "_", $string);
+	} else {
+		return str_replace("_", " ", $string);
+	}
+} // slugify ()
+
+/**
+ * Change an object to an array
+ *
+ * Takes an object and returns it as an array with exactly the same structure.
+ * @param  object    $obj    A php data object
+ * @return array             The original object as an array
+ */
+function objectToArray($obj) {
+    /*
+        We first have to check if it is actually an object that has been passed in. If it is, we then get tghe properties so we can later tell what type of object it is.
+    */
+    if (is_object($obj)) {
+        $obj = get_object_vars($obj);
+    }
+
+    /*
+        Now that we have the object properties, we need to see if it is an array.
+
+        If it is, we return it, converted to an array, using php's __FUNCTION__ magic constant.
+
+        If it is not an array, we simply return the object as it is.
+    */
+    if (is_array($obj)) {
+        return array_map(__FUNCTION__, $obj);
+    } else {
+        return $obj;
+    }
+} // objectToArray()
+
+function listErrors ($errors) {
+
+    $output = '';
+
+    foreach ($errors as $key => $value) {
+        $output .= Php2Html::li(['content' => $value]);
+    }
+
+    return Php2Html::ul(['content' => $output]);
+}
+
+/**
+ * Unset posted data that matches the existing database data
+ *
+ * After a form is posted, we only want to attempt to validate
+ * and update any fields that have changed.
+ *
+ * This function takes a set of $_POST data and matches it
+ * against the table record being updated. It unsets any fields
+ * that are not different from the existing data.
+ *
+ * @param  array    $post    Form $_POST data
+ * @param  array    $records Existing database record data
+ * @return array             $_POST data that is different from existing
+ */
+function stripPostData ($post, $records) {
+    /*
+        Set an array of field names that you do not want checked. These
+        will generally be fields that do not actually have a corresponding
+        database column.
+     */
+    $ignore = [
+        'confirm_password', 'terms'
+    ];
+
+    // Loop through the posted data
+    foreach($post as $key => $value) {
+
+        /*
+            If the field is not in the $ignore list, check it against
+            the corresponding database column record. If they match,
+            unset it.
+         */
+        if(!in_array($key, $ignore)) {
+            if($post[$key] === $records->$key) {
+                unset($post[$key]);
+            }
+        }
+
+    } // foreach
+
+    // Return the remaining post data
+    return $post;
+} // stripPostData ()
+
+/**
+ * Unset unrequired rules
+ *
+ * After a form is posted, we only want to attempt to validate
+ * and update any fields that have changed.
+ *
+ * This function takes a set of $_POST data and matches it
+ * against the validation rules for the table being updated. It
+ * unsets any rules that are not required due to unchanged form
+ * field data.
+ *
+ * @param  array    $post    Form $_POST data
+ * @param  array    $_rules  Table validation rules
+ * @return array             Rules that are still required
+ */
+function stripValidateRules ($_postdata, $_rules) {
+
+    // Loop through the posted data
+    foreach($_postdata as $key => $value) {
+        // Loop through the rules
+        foreach ($_rules as $key => $value) {
+            /*
+                If the field does not exist unset the matching rule.
+             */
+            if(!isset($_postdata[$key])) {
+                unset($_rules[$key]);
+            }
+        }
+    } // foreach
+
+    return $_rules;
+} // stripValidateRules
+
+/**
+ * Show any user messages in a Bootstrap alert
+ *
+ * If ever we need to to show the user a message, such as information about a
+ * failed form post or is something they were looking for cannot be found, we
+ * show it in a Boostrap alert, after the title and breadcrumbs but before the
+ * page content.
+ *
+ * There are two ways to set the details of the message via a $_SESSION variable
+ * or passed in from the controller to the view asd $data['message']. Whichever
+ * method is used, it should contain an array of data to be used in an alert and
+ * there will be a function in each model called messages() that would contain a
+ * list of messages relevant to that model.
+
+ * For example, in the users model ('/app/models/M_Users.php') messages()
+ * function, there is a key of 'not_found', which is used when trying to view the
+ * profile of a user that does not exist.
+ *
+ * 'not_found' => [
+ *     'title' => 'User not found',
+ *     'content' => 'The User could not be found.',
+ *     'alert_color' => 'info',
+ *     'dismissible' => false,
+ * ],
+ *
+ * To set that to either a $_SESSION or $data, we would simply call messages(),
+ * passing in the key we are after, assuming this is being set from within the
+ * model.
+ *
+ * Session::put('message',$this->messages('not_found'));
+ * $data['message'] = $this->messages('not_found'));
+ *
+ * In the view, just after we create the empty $content variable, we call this
+ * function, passing in the $data sent from the controller. It first checks to
+ * see if $_SESSION['message'] exists as we actually apply the message array to
+ * this if there might be a page change between receiving the form data and
+ * displaying the message. Logging in is a good example of this as you can attempt
+ * to log in from any page, but upon failure will go to http://yoursite/Login.
+ *
+ * If $_SESSION['message'] does exists, it sets that to a variable called
+ * $show_message and unsets it from the $_SESSION.
+ *
+ * If $_SESSION does not exist, it then checks to see if $data['message'] exists.
+ * When we call this function, we pass in all of the $data passed to the view,
+ * simply because it would be a lot messier to check if it contains 'messages'
+ * each time. If $data['message'] does exist, it sets that to $show_message and
+ * unsets it.
+ *
+ * Now we are the the point where if there is a message to show, $show_message
+ * will contain an array of the message details, so we pass it into the alert()
+ * function in '/app/core/Messages.php' which will return a fully formed
+ * Bootstrap alert.
+ *
+ * @param   array   $data   Data passed to the view
+ * @return  string/null     Bootstrap alert if required
+ * @example                 All files in '/app/views'
+*/
+function showPageAlerts ($data) {
+
+    nicePrint_r($data, 'showPageAlerts()');
+    // Create a null version of the variable that we will use
+    $show_message = null;
+
+    /*
+        Firstly, we check to see if there is a message stored in $_SESSION. If there is, we overwrite $show_message with it and then unset it.
+
+        If there is no message in $_SESSION, we then see if one has been passed in as part of the data sent to the view and if so, again set it to $show_message and unset it.
+
+        For each of these, we also check to see if errors or an insert id is set, as we use them along with some messages.
+
+    */
+    if(Session::exists('message')) {
+        /*
+            $_SESSION['message'] exists so use that as our message and unset it.
+        */
+        $show_message = Session::get('message');
+        Session::delete('message');
+
+        $show_errors = (Session::exists('errors')) ? Session::get('errors') : null;
+        $show_insert_id = (Session::exists('insert_id')) ? Session::get('insert_id') : null;
+
+    } else if (isset($data['message'])) {
+        /*
+            $_SESSION['message'] does not exist but $data['message'] does, so use that as our message and unset it.
+        */
+        $show_message = $data['message'];
+        unset($data['message']);
+
+        $show_errors = (isset($data['errors'])) ? $data['errors'] : null;
+        $show_insert_id = (isset($data['insert_id'])) ? $data['insert_id'] : null;
+    }
+
+    /*
+        We now have the message to be shown set to $show_message but there are a couple of placeholders this may contain.
+
+        {{errors}} will be replaced by any validation errors passed through
+        {{insert_id}} will be replaced by any id of the record inserted into the database
+
+        Both of these get replaced by the $show_errors (in a function to make a <ul> out of them) and $show_insert_id, variables created above.
+     */
+    if(isset($show_errors)) {
+        $show_message = str_replace('{{errors}}', listErrors($show_errors), $show_message);
+    }
+
+    if(isset($show_insert_id)) {
+        $show_message = str_replace('{{insert_id}}', $show_insert_id,  $show_message);
+    }
+
+    /*
+        If $show_message now contains anything, it gets passed to the alert() function in '/app/core/Messages.php' amd return the alert. If it is empty, we just return null.
+    */
+    return ($show_message) ? Messages::alert ($show_message) : null;
+
+} // showPageAlerts ()
+
+function breadcrumbs($sep = '', $home = 'Home') {
+    $bc      = '<nav aria-label="breadcrumb" class="mb-1 " role="navigation">';
+    $bc     .=   '<ol class="breadcrumb  py-0 px-2 mb-2">';
+    //Get the server http address
+    $site   =   'http://'.$_SERVER['HTTP_HOST'];
+    //Get all vars en skip the empty ones
+    $crumbs =   array_filter( explode("/",$_SERVER["REQUEST_URI"]) );
+    if(count($crumbs)){
+        //Create the homepage breadcrumb
+        $bc    .=   '<li class="breadcrumb-item"><a href="'.$site.'">'.$home.'</a>'.$sep.'</li>';
+        //Count all not empty breadcrumbs
+        $nm     =   count($crumbs);
+        $i      =   1;
+        //Loop through the crumbs
+        foreach($crumbs as $crumb){
+            //grab the last crumb
+            $last_piece = end($crumbs);
+            //Make the link look nice
+            $link    =  ucfirst( str_replace( array(".php","-","_"), array(""," "," ") ,$crumb) );
+            //Loose the last seperator
+            $sep     =  $i==$nm?'':$sep;
+            //Add crumbs to the root
+            $site   .=  '/'.$crumb;
+            //Check if last crumb
+            if ($last_piece!==$crumb){
+            //Make the next crumb
+            $bc     .= '<li class="breadcrumb-item"><a href="'.$site.'">'.$link.'</a>'.$sep.'</li>';
+            } else {
+            //Last crumb, do not make it a link
+            $bc     .= '<li class="breadcrumb-item active">'.ucfirst( str_replace( array(".php","-","_"), array(""," "," ") ,$last_piece)).'</li>';
+            }
+            $i++;
+        }
+        $bc .=  '</ol>';
+        $bc .= '</nav>';
+        //Return the result
+        return $bc;
+    }
+}
+
+
+/*
+public static function breadcrumb ($array)
+{
+
+    $home = (isset($array['site'])) ? '/' . $array['site'] : '/';
+    $output = '<nav aria-label="breadcrumb" class="mb-1 " role="navigation">';
+    $output .= '<ol class="breadcrumb m-0 p-1">';
+
+    $output .= '<li class="breadcrumb-item"><a href="'.$home.'">Home</a></li>';
+
+    if(isset($array['path']))
+    {
+        foreach ($array['path'] as $key => $value) {
+            $output .= '<li class="breadcrumb-item"><a href="'.$home.$key.'">'.$value.'</a></li>';
+        }
+    }
+
+    $output .= '<li class="breadcrumb-item active" aria-current="page">'.$array['current'].'</li>';
+
+    $output .= '</ol>';
+    $output .= '</nav>';
+
+    return $output . self::htmlComment('breadcrumb');
+}
+*/
+
+
+
+
+
+
+
+
+
+
+======================================================================================
+
+
+
+
+
+
+
+
+
+<?php
+
+/**
+ * Autoloads class files on request
+ *
+ * Uses the built in php spl_autoload_register
+ * http://php.net/manual/en/function.spl-autoload-register.php
+ *
+ * All class files and the class they contain must be the same.
+ * EG. The 'Config' class must be contained in Config.php
+ *
+ * Passes in an array of folders to search for the required class and then includes it
+ * in the page using require_once.
+ * If a class file with the same name is found in more than one directory, require_once
+ * ensures that only the first one will be used.
+ *
+ * Example Use
+ * autoload_class (
+ *     $dirs = array(
+ *         './src/classes/', # Reads the src/classes directory in the root
+ *         '../classes/',    # Reads the classes directory one level up from the file
+ *     )
+ * );
+ *
+ * @param  array  $dirs List of directories to look for class files
+ * @return require       Class file
+ */
+function autoload_class ($dirs=array()) {
+
+    // Call the built in php spl_autoload_register
+    spl_autoload_register(function($class_name) {
+
+        // Call the passed-in array of directories as a $global value
+        global $dirs;
+        // Loop through the array of directories
+        foreach( $dirs as $dir ) {
+            // Check if the class file exists in the current directory
+            if (file_exists($dir.$class_name.'.php')) {
+
+                // If the file exists, call it using require_once
+                if (!class_exists($dir.$class_name)) {
+
+                    require_once($dir.$class_name.'.php');
+                }
+
+                return;
+            }
+        }
+    });
+}
+
+
+
+
+
+
+
+
+
+
+======================================================================================
+
+
+
+
+
+
+
+
+
+<?php
+
+/*
+* Start the Php session
+*
+* As this file is the start of all front end pages, start the session here at the start
+*
+*/
+session_start();
+
+/*
+* Set Default Timezone
+*
+* Allows you to override the time set on the server.
+* Used if your site is hosted in a different timezone.
+*
+* @param string     A PHP supported Timezone as defined at http://php.net/manual/en/timezones.php
+*
+*/
+date_default_timezone_set('Europe/London');
+
+/*
+* Include global functions
+*
+*/
+require_once 'functions/global.php';
+
+/*
+* autoload_class ()
+*
+* Called from ./src/functions/global.php > ./src/functions/autoload_class.php
+^ Automatically loads classes from the specified folders when called
+*
+* @param array     Paths to all folders containing class files
+*
+*/
+autoload_class (
+    $dirs = array(
+        'app/core/Templates/',
+        'app/core/',
+        'app/models/',
+    )
+);
+
+
+
+/** Call in the App and Controller classes
+ *
+ *  These are where the url becomes a class, method and output
+ *
+ **/
+require_once 'app/core/App.php';
+require_once 'app/core/Controller.php';
+require_once 'app/models/M_Users.php';
+
+
+/*
+    Check the login status
+
+    Before we render the page, we check if the user is logged in,
+    either in this current session or via the remember me cookie,
+    and whether or not there have been any login or logout attempts.
+
+    These are mainly done via functions in the M_Users() model so we
+    open that up to start.
+
+ */
+$user_model = new M_Users();
+
+// Check if a user is already logged in via a session
+if(!$user_model->isLoggedIn()) {
+    // User is not logged in so see if the cookie has been set
+    if($user_model->hasCookie ()) {
+        // Cookie set so check the details
+        $user_model->checkCookie();
+    } else {
+        // Cookie not set so check for a login form post
+        if (Input::exists(['name'=>'login'])) {
+            // There has been a login attempt to attempt to process it
+            $user_model->tryLogin ();
+        }
+    }
+} else {
+    // User is logged in so delete any page refer sessions
+    if(Session::exists('refer_page')) {
+        Session::delete('refer_page');
+    }
+
+    // Check for a login form post
+    if (Input::exists(['name'=>'logout'])) {
+        $user_model->tryLogout ();
+    }
+}
