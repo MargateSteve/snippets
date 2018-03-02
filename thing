@@ -1,0 +1,6926 @@
+controllers
+
+
+
+
+
+<?php
+
+/**
+ * CallLog Controller
+ *
+ * Controller for any functions called from any urls starting with
+ * http://yoursite/Members.
+ *
+ * An explanation of how we pass the information to the view can be found in
+ * app/controllers/home.
+ *
+ * @package Core
+ * @author  Steve Ball <steve@follyball.co.uk>
+ * @copyright   Copyright (c) 2018 Steve Ball <steve@follyball.co.uk>
+ * @link 	http://yoursite/CallLog
+ * @link 	http://yoursite/CallLog/Add
+ * @link 	http://yoursite/CallLog/Details/{Call_ID}
+ */
+class CallLog extends Controller
+{
+
+    /**
+     * Construct the class
+     *
+     * Simply creates a re-usable instance of the default model
+     */
+	public function __construct () {
+		// Model
+		$this->_default_model = $this->model('M_Calls');
+        $this->_logs = new Logs();
+	} // __construct ()
+
+
+    /**
+	 * Member Section Overview Page
+	 *
+	 * @param  None at the mo but there will be
+	 * @return view
+	 * @link 	http://site.com/Members/
+	 *
+	 */
+  	public function index($_args=null) {
+
+        $date =  new DateTime();
+        $today_count = $this->_default_model->listingcount($date->format('Y-m-d'));
+
+        $date =  new DateTime('yesterday');
+        $yesterday_count = $this->_default_model->listingcount($date->format('Y-m-d'));
+
+        $start = new DateTime("Monday this week");
+        $end = new DateTime("today");
+        $this_week_count = $this->_default_model->listingcount($start->format('Y-m-d'), $end->format('Y-m-d'));
+
+        $start = new DateTime("Monday last week");
+        $end = new DateTime("Sunday last week");
+        $last_week_count = $this->_default_model->listingcount($start->format('Y-m-d'), $end->format('Y-m-d'));
+
+        $start = new DateTime("first day of this month");
+        $end = new DateTime("last day of this month");
+        $this_month_count = $this->_default_model->listingcount($start->format('Y-m-d'), $end->format('Y-m-d'));
+
+        $start = new DateTime("first day of last month");
+        $end = new DateTime("last day of last month");
+        $last_month_count = $this->_default_model->listingcount($start->format('Y-m-d'), $end->format('Y-m-d'));
+
+        $start = new DateTime("first day of January");
+        $end = new DateTime();
+        $this_year_count = $this->_default_model->listingcount($start->format('Y-m-d'), $end->format('Y-m-d'));
+
+        $start = new DateTime("last year January 1st");
+        $end = new DateTime("last year December 31st");
+        $last_year_count = $this->_default_model->listingcount($start->format('Y-m-d'), $end->format('Y-m-d'));
+
+
+
+        $_view_data = [
+            'page_name' => 'Calls Overview',
+            'page_type' => 'overview',
+            'count' => $this->_default_model->count(),
+            'today' => $today_count,
+            'yesterday' => $yesterday_count,
+            'this_week' => $this_week_count,
+            'last_week' => $last_week_count,
+            'this_month' => $this_month_count,
+            'last_month' => $last_month_count,
+            'this_year' => $this_year_count,
+            'last_year' => $last_year_count,
+			'latest' => $this->_default_model->mostRecent(),
+        ];
+
+
+
+
+		/**
+		 * Pass the data to the view
+		 * @var 	string 	View Path
+		 * @var 	array 	Data being passed to the view
+		 */
+        $this->view(
+            'home/calls',
+            $_view_data
+        );
+  	} // index()
+
+
+    public function add ($params=null) {
+        if($params){Redirect::to('404'); }
+        $_view_data = [
+            'page_name' => 'Add New Call',
+            'page_type' => 'add',
+            'form' => $this->_default_model->form(['version'=>'create']),
+        ];
+        $user = new M_Users();
+
+        if(!$user->isLoggedIn()) {
+            $_view_data['message'] = $this->_default_model->messages('not_logged_in');
+            $_view_data['form'] = null;
+        } else {
+
+
+            if (Input::exists(['name'=>'add_call'])) {
+                unset($_POST['add_call']);
+                if($_POST) {
+                   $_postdata = $_POST;
+
+                   /*
+                        We now run a function called stripValidateRules(), set in /app/functions/global.php, to only use the rules that are required to validate against the $_POST data.
+                     */
+                    $_rules = stripValidateRules (
+                        $_postdata,
+                        $this->_default_model->validation_rules()
+                    );
+
+
+                    // Open a new instance of the validation class
+                    $validate = new Validate();
+                    /*
+                        Check the posted data against the validation rules using the check () function from the Validate () class.
+                        If successful, the $_validation->passed() function will return true.
+                     */
+                    $_validation = $validate->check(
+                        $_postdata,
+                        $_rules
+                    );
+
+
+                    if ($_validation->passed()) {
+
+                        if(!$_postdata['product']) {
+                            unset($_postdata['product']);
+                        }
+                        if($this->_default_model->create($_postdata)) {
+                            $_view_data['message'] = $this->_default_model->messages('create_success');
+                        } else {
+                            $_view_data['message'] = $this->_default_model->messages('create_fail');
+                        }
+                    } else {
+                        $_view_data['message'] = $this->_default_model->messages('validation_failed');
+                        $_view_data['errors'] = $_validation->errors();
+                        $_view_data['form'] = $this->_default_model->form([
+                            'errors' => $_view_data['errors'],
+                            'version' => 'create',
+                            'area' => 'user',
+                        ]);
+                    }
+
+               }
+
+            }
+        }
+
+
+        /**
+		 * Pass the data to the view
+		 * @var 	string 	View Path
+		 * @var 	array 	Data being passed to the view
+		 */
+        $this->view(
+            'home/calls',
+            $_view_data
+        );
+
+    }
+
+
+
+    public function details($call=null) {
+
+        if(!$call){Redirect::to('404'); }
+
+        if($this->_default_model->find($call)) {
+            $_view_data = [
+                'page_name' => 'Viewing Call',
+                'page_type' => 'view',
+                'data' => $this->_default_model->data()
+            ];
+        } else {
+            $_view_data = [
+                'page_name' => 'Call not found',
+                'page_type' => 'view',
+                'status' => 'not_found',
+            ];
+        }
+
+
+        $this->view(
+            'home/calls',
+            $_view_data
+        );
+
+    }
+
+
+
+
+
+
+
+
+
+	/** 	Show a listing of all Batches
+	 *
+	 *	Shows a list of all existing batches
+	 *
+	 *	$name is not used, it is just a reminder that we can pass variables in.
+	 *
+	 * 	One function from the 'Batches_Model' is used...
+	 *	listing() returns an array containing the details of all batches in the database
+	**/
+	public function listing($type=null, $value=null) {
+
+        if(!$type) {
+            $_view_data = [
+                'page_name' => 'Call Listing',
+                'page_type' => 'listing',
+                'data' => $this->_default_model->listing(),
+                'count' => $this->_default_model->listingcount(),
+            ];
+        } else {
+            if ($type == 'Today') {
+                $date =  new DateTime();
+                $_view_data = [
+                    'page_name' => 'Call Listing for Today',
+                    'page_type' => 'listing',
+                    'data' => $this->_default_model->listing($date->format('Y-m-d')),
+                    'count' => $this->_default_model->listingcount($date->format('Y-m-d')),
+                ];
+            } else if ($type == 'Month') {
+                $start = new DateTime("first day of this month");
+                $end = new DateTime("last day of this month");
+                $_view_data = [
+                    'page_name' => 'Call Listing for This Month',
+                    'page_type' => 'listing',
+                    'data' => $this->_default_model->listing($start->format('Y-m-d'), $end->format('Y-m-d')),
+                    'count' => $this->_default_model->listingcount($start->format('Y-m-d'), $end->format('Y-m-d')),
+                ];
+            } else if ($type == 'Week') {
+                $start = new DateTime('Monday this week');
+                $end = new DateTime();
+                $_view_data = [
+                    'page_name' => 'Call Listing for This Week',
+                    'page_type' => 'listing',
+                    'data' => $this->_default_model->listing($start->format('Y-m-d'), $end->format('Y-m-d')),
+                    'count' => $this->_default_model->listingcount($start->format('Y-m-d'), $end->format('Y-m-d')),
+                ];
+            }else if ($type == 'Year') {
+                $start = new DateTime('first day of january this year');
+                $end = new DateTime();
+                echo $start->format('Y-m-d');
+                echo $end->format('Y-m-d');
+                $_view_data = [
+                    'page_name' => 'Call Listing for This Year',
+                    'page_type' => 'listing',
+                    'data' => $this->_default_model->listing($start->format('Y-m-d'), $end->format('Y-m-d')),
+                    'count' => $this->_default_model->listingcount($start->format('Y-m-d'), $end->format('Y-m-d')),
+                ];
+            }
+        }
+
+
+		// Pass the details to the page via showview()
+		$this->view(
+			// Select the View to use
+			'home/calls',
+			$_view_data
+		) ;
+	} // list
+
+
+
+    public function edit($params=null) {
+
+        /*
+            If we have parameters there has been a url error so send to
+            the 404 page
+         */
+        if($params){Redirect::to('404');}
+
+        $model = $this->model('M_Users');
+
+
+        $params = [
+            'page_name' => 'Edit Profile',
+            'page_type' => 'edit',
+        ];
+
+        if(!$model->isLoggedIn()) {
+            $params['errors'] = true;
+            $params['status'] = 'not_logged_in';
+        } else {
+            $update_errors = '';
+            $pw_errors = '';
+            if($model->find(Session::get(Settings::members()['login_session']))) {
+
+                if (Input::exists(['name'=>'update_user'])) {
+                    unset($_POST['update_user']);
+
+                    $_postdata = stripPostData ($_POST, $model->data());
+
+                    if($_postdata) {
+                        $_rules = $model->validation_rules();
+                        $_rules = stripValidateRules ($_postdata, $_rules);
+
+                        $validate = new Validate();
+
+                        // Check the posted data against the validation rules
+                        $validation = $validate->check(
+                            $_postdata,
+                            $_rules
+                        );
+
+
+                        if ($validation->passed()) {
+                            if($model->update($model->data()->id, $_postdata)) {
+                                $params['status'] = 'account_update_success';
+                            } else {
+                                $params['status'] = 'update_failed_unspecified';
+                            }
+                        } else {
+                            $params['status'] = 'validation_failed';
+                            $params['errors'] = $validation->errors();
+                        }
+                    } else {
+                        $params['status'] = 'account_update_no_change';
+                    }
+                } // End profile form post
+
+                if (Input::exists(['name'=>'reset_password'])) {
+                    unset($_POST['reset_password']);
+
+                    $_postdata = stripPostData ($_POST, $model->data());
+
+                    if($_postdata) {
+                        $_rules = $model->validation_rules();
+                        $_rules = stripValidateRules ($_postdata, $_rules);
+
+                        $validate = new Validate();
+
+                        // Check the posted data against the validation rules
+                        $validation = $validate->check(
+                            $_postdata,
+                            $_rules
+                        );
+
+
+                        if ($validation->passed()) {
+                            unset($_postdata['confirm_password']);
+                            $_postdata['salt'] = Hash::salt(32);
+                            $_postdata['password'] = Hash::make(Input::get('password'), $_postdata['salt']);
+
+                            if($model->update($model->data()->id, $_postdata)) {
+                                $params['status'] = 'pw_update_success';
+                            } else {
+                                $params['status'] = 'pw_update_failed_unspecified';
+                            }
+                        } else {
+                            $params['status'] = 'validation_failed';
+                            $params['errors'] = $validation->errors();
+                        }
+                    } else {
+                        $params['status'] = 'no_change';
+                    }
+
+                }
+
+                $params['edit_form'] = $model->userForm([
+                    'errors' => (isset($params['errors'])) ? $params['errors'] : '',
+                    'version' => 'edit',
+                    'area' => 'user',
+                    'data' => $model->data()
+                ]);
+
+                $params['password_form'] = $model->resetPasswordForm([
+                    'errors' => (isset($params['errors'])) ? $params['errors'] : '',
+                ]);
+            }
+        }
+
+        $this->view(
+            'home/users',
+			$params
+		);
+
+    }
+
+
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<?php
+
+/**
+ * Front End Members Controller
+ *
+ * Controller for any functions called from any urls starting with
+ * http://yoursite/Members.
+ *
+ * An explanation of how we pass the information to the view can be found in
+ * app/controllers/home.
+ *
+ * @package Core
+ * @author  Steve Ball <steve@follyball.co.uk>
+ * @copyright   Copyright (c) 2018 Steve Ball <steve@follyball.co.uk>
+ * @link 	http://yoursite/Users
+ * @link 	http://yoursite/Users/{User}
+ * @link 	http://yoursite/Users/Edit
+ * @link 	http://yoursite/Users/Listing
+ * @link 	http://yoursite/Users/Profile
+ * @link 	http://yoursite/Users/ResetPassword
+ * @link 	http://yoursite/Users/Verify
+
+ */
+class Ideas extends Controller
+{
+
+    /**
+     * Construct the class
+     *
+     * Simply creates a re-usable instance of the default model
+     */
+	public function __construct () {
+		// Model
+		$this->_default_model = $this->model('M_Ideas');
+        $this->admins = [2,1,5];
+
+	} // __construct ()
+
+
+    public function add ($params=null) {
+        if($params){Redirect::to('404'); }
+        $_view_data = [
+            'page_name' => 'Add New Idea',
+            'page_type' => 'add',
+            'form' => $this->_default_model->form(['version'=>'create']),
+        ];
+        $user= new M_Users();
+        if(!$user->isLoggedIn()) {
+            $_view_data['message'] = $this->_default_model->messages('not_logged_in');
+
+            $_view_data['form'] = null;
+        } else {
+
+
+            if(Input::exists('add_idea')) {
+                unset($_POST['add_idea']);
+
+                $error = false;
+                foreach ($_POST as $key => $value) {
+                    if(!strlen(trim($value))) {
+                        $error = true;
+                    }
+                }
+
+                if($error) {
+                    $_view_data['message'] = $this->_default_model->messages('idea_empty');
+                } else {
+                    $_view_data['message'] = $this->_default_model->messages('success');
+                    $this->_default_model->create($_POST);
+                }
+
+            }
+        }
+
+
+
+
+        /**
+		 * Pass the data to the view
+		 * @var 	string 	View Path
+		 * @var 	array 	Data being passed to the view
+		 */
+        $this->view(
+            'home/ideas',
+            $_view_data
+        );
+
+    }
+
+    /**
+	 * Member Section Overview Page
+	 *
+	 * @param  None at the mo but there will be
+	 * @return view
+	 * @link 	http://site.com/Members/
+	 *
+	 */
+  	public function index($params=null) {
+        $user = new M_Users();
+
+        $_view_data = [
+            'page_name' => 'Ideas',
+            'page_type' => 'overview',
+            'pending_ideas' => 	$this->_default_model->count_pending_ideas(),
+            'pending_comments' => 	$this->_default_model->count_pending_comments(),
+            'list' => 	$this->_default_model->listing(),
+            'is_admin' => ($user->isLoggedIn()  && in_array(Session::get(Settings::members()['login_session']), $this->admins)) ? true : false,
+        ];
+
+
+		/**
+		 * Pass the data to the view
+		 * @var 	string 	View Path
+		 * @var 	array 	Data being passed to the view
+		 */
+        $this->view(
+            'home/ideas',
+            $_view_data
+        );
+  	} // index()
+
+    public function pending($type=null) {
+        $user = new M_Users();
+        if(!$user->isLoggedIn()  || !in_array(Session::get(Settings::members()['login_session']), $this->admins)) {
+            Redirect::to('404');
+        }
+
+        $_view_data = [
+            'page_name' => 'Pending',
+            'page_type' => 'pending_overview',
+            'pending_ideas' => 	$this->_default_model->count_pending_ideas(),
+            'pending_comments' => 	$this->_default_model->count_pending_comments(),
+            'is_admin' => ($user->isLoggedIn()  && in_array(Session::get(Settings::members()['login_session']), $this->admins)) ? true : false,
+        ];
+
+        if(Input::exists(['name'=>'approve_idea'])) {
+
+            if($this->_default_model->update(Input::get('approve_idea'), ['status' => 'o'])) {
+                $_view_data['message'] = $this->_default_model->messages('idea_approved');
+            }
+        }
+
+        if(Input::exists(['name'=>'approve_all_comments'])) {
+            if($this->_default_model->approve_all_comments($record, ['status' => 'o'])) {
+                $_view_data['message'] = $this->_default_model->messages('all_comments_approved');
+            }
+        }
+
+        if(Input::exists(['name'=>'approve_single_comment'])) {
+            if($this->_default_model->approve_single_comment(Input::get('approve_single_comment'), ['status' => 'o'])) {
+                $_view_data['message'] = $this->_default_model->messages('single_comment_approved');
+            }
+        }
+
+    
+
+
+
+        if ($type) {
+                $_view_data['page_name'] = $_view_data['page_name'].' '.$type.'\'s';
+
+            if ($type == 'Idea') {
+                $_view_data['page_type'] = 'pending_ideas';
+
+                if($_view_data['pending_ideas']) {
+                    $_view_data['list'] = $this->_default_model->list_pending_ideas();
+                } else {
+                    $_view_data['message'] = $this->_default_model->messages('nothing_pending');
+                }
+
+            }
+
+            if ($type == 'Comment') {
+                $_view_data['page_type'] = 'pending_comment';
+                $_view_data['list'] = $this->_default_model->list_pending_comments();
+            }
+        }
+
+        $this->view(
+            'home/ideas',
+            $_view_data
+        );
+    }
+
+
+
+    public function details($record=null) {
+        $user = new M_Users();
+        if(!$record) {
+            Redirect::to('/Ideas');
+        }
+        $_view_data = [
+            'page_name' => 'Viewing Idea',
+            'page_type' => 'view',
+            'is_admin' => ($user->isLoggedIn()  && in_array(Session::get(Settings::members()['login_session']), $this->admins)) ? true : false,
+        ];
+
+        if(Input::exists(['name'=>'approve_idea'])) {
+            if($this->_default_model->update($record, ['status' => 'o'])) {
+                $_view_data['message'] = $this->_default_model->messages('idea_approved');
+            }
+        }
+
+        if(Input::exists(['name'=>'approve_all_comments'])) {
+            if($this->_default_model->approve_all_comments($record, ['status' => 'o'])) {
+                $_view_data['message'] = $this->_default_model->messages('all_comments_approved');
+            }
+        }
+
+        if(Input::exists(['name'=>'approve_single_comment'])) {
+            if($this->_default_model->approve_single_comment(Input::get('approve_single_comment'), ['status' => 'o'])) {
+                $_view_data['message'] = $this->_default_model->messages('single_comment_approved');
+            }
+        }
+
+
+        if(Input::exists(['name'=>'add_comment'])) {
+            unset($_POST['add_comment']);
+            if(!strlen(trim(Input::get('details')))) {
+                $_view_data['message'] = $this->_default_model->messages('comment_empty');
+            } else {
+                if($this->_default_model->create_comment($record, $_POST)) {
+                    $_view_data['message'] = $this->_default_model->messages('comment_success');
+                }
+            }
+        }
+
+        if($this->_default_model->find($record)) {
+            $_view_data['record'] = $this->_default_model->data();
+
+            if(count($this->_default_model->listingComments($record))) {
+                $_view_data['comments'] = $this->_default_model->listingComments($record);
+
+                $pending_comments = 0;
+
+                foreach ($_view_data['comments'] as $key => $value) {
+                    if($value->status=='p') {
+                        $pending_comments++;
+                    }
+                }
+
+                if($pending_comments) {
+                    $_view_data['pending_comments'] = $pending_comments;
+                    $_view_data['pending_comments_form'] =$this->_default_model-> pending_comments_form();
+                }
+            }
+
+            if($user->isLoggedIn()) {
+                $_view_data['comment_form'] = $this->_default_model->comment_form();
+            } else {
+                $_view_data['comment_form'] = Php2Html::p([
+                    'content' => 'You must be logged in to add a comment',
+                    'class' => 'p-2 bg-light border'
+                ]);
+            }
+
+
+
+            if($this->_default_model->data()->status == 'p'){
+                $_view_data['pending_idea_form'] =$this->_default_model-> pending_idea_form();
+            }
+            if(
+                $this->_default_model->data()->status == 'p' &&
+                (
+                    !$user->isLoggedIn()  || !in_array(Session::get(Settings::members()['login_session']), $this->admins)
+                )
+            ) {
+                $_view_data['message'] = $this->_default_model->messages('unathorised');
+                $_view_data['record'] = null;
+
+            }
+        } else {
+            $_view_data['message'] = $this->_default_model->messages('not_found');
+        }
+
+
+
+
+        $this->view(
+            'home/ideas',
+            $_view_data
+        );
+    }
+
+    public function admin($record=null, $param=null) {
+
+        $_view_data = [
+            'page_name' => 'One Thing Admin',
+            'page_type' => 'admin',
+        ];
+        $user = new M_Users();
+
+        if(!$user->isLoggedIn() || !$user->hasPermission('admin')) {
+            $_view_data['message'] = $this->_default_model->messages('unauthorised');
+        } else {
+
+            if($record) {
+                // In view mode
+                if($param == 'MarkViewed') {
+                    $this->_default_model->update($record, ['viewed'=>1]);
+                    $_view_data['message'] = $this->_default_model->messages('marked');
+                }
+                $this->_default_model->find($record);
+                $_view_data['record'] = $this->_default_model->data();
+
+            } else {
+                // In list mode
+                $_view_data['list'] = $this->_default_model->listing();
+            }
+        }
+
+
+
+        /**
+         * Pass the data to the view
+         * @var 	string 	View Path
+         * @var 	array 	Data being passed to the view
+         */
+        $this->view(
+            'home/ideas',
+            $_view_data
+        );
+    }
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<?php
+
+/**
+ * Front End Members Controller
+ *
+ * Controller for any functions called from any urls starting with
+ * http://yoursite/Members.
+ *
+ * An explanation of how we pass the information to the view can be found in
+ * app/controllers/home.
+ *
+ * @package Core
+ * @author  Steve Ball <steve@follyball.co.uk>
+ * @copyright   Copyright (c) 2018 Steve Ball <steve@follyball.co.uk>
+ * @link 	http://yoursite/OneThing
+ * @link 	http://yoursite/OneThing/Admin
+ */
+class OneThing extends Controller
+{
+
+    /**
+     * Construct the class
+     *
+     * Simply creates a re-usable instance of the default model
+     */
+	public function __construct () {
+		// Model
+		$this->_default_model = $this->model('M_OneThing');
+        $this->_user_model = $this->model('M_Users');
+        $this->admins = [2,1,5];
+
+	} // __construct ()
+
+
+    /**
+	 * Member Section Overview Page
+	 *
+	 * @param  None at the mo but there will be
+	 * @return view
+	 * @link 	http://site.com/Members/
+	 *
+	 */
+  	public function index($params=null) {
+
+        ini_set('display_errors', 1);
+        ini_set('display_startup_errors', 1);
+        error_reporting(E_ALL);
+        $_view_data = [
+            'page_name' => 'One Thing',
+            'page_type' => 'overview',
+            'form' => 	$this->_default_model->form($this->_user_model->isLoggedIn()),
+            'logged_in' => $this->_user_model->isLoggedIn(),
+            'is_admin' => ($this->_user_model->isLoggedIn()  && in_array(Session::get(Settings::members()['login_session']), $this->admins)) ? true : false,
+        ];
+
+        if(Input::exists(['name'=>'add_one_thing'])) {
+            unset($_POST['add_one_thing']);
+
+            if(Input::exists(['name'=>'user'])) {
+                $_POST['user'] = Session::get(Settings::members()['login_session']);
+            }
+
+            if(Input::exists(['name'=>'public'])) {
+                $_POST['public'] = 1;
+            }
+
+            if(!Input::get('details')) {
+                $_view_data['message'] = $this->_default_model->messages('empty');
+
+            } else {
+                if($this->_default_model->create($_POST)) {
+                    $_view_data['message'] = $this->_default_model->messages('success');
+                }
+            }
+
+        }
+        $_view_data['list'] = $this->_default_model->listing();
+
+
+		/**
+		 * Pass the data to the view
+		 * @var 	string 	View Path
+		 * @var 	array 	Data being passed to the view
+		 */
+        $this->view(
+            'home/onething',
+            $_view_data
+        );
+  	} // index()
+
+    public function admin($record=null, $param=null) {
+
+        $_view_data = [
+            'page_name' => 'One Thing Admin',
+            'page_type' => 'admin',
+        ];
+        $user = new M_Users();
+
+        if(!$user->isLoggedIn() || !$user->hasPermission('admin')) {
+            $_view_data['status'] = 'unauthorised';
+        } else {
+
+            if($record) {
+                // In view mode
+                if($param == 'MarkViewed') {
+                    $this->_default_model->update($record, ['viewed'=>1]);
+                    $_view_data['status'] = 'marked';
+                }
+                $this->_default_model->find($record);
+                $_view_data['record'] = $this->_default_model->data();
+
+            } else {
+                // In list mode
+                $_view_data['list'] = $this->_default_model->adminlisting();
+            }
+        }
+
+
+
+        /**
+         * Pass the data to the view
+         * @var 	string 	View Path
+         * @var 	array 	Data being passed to the view
+         */
+        $this->view(
+            'home/onething',
+            $_view_data
+        );
+    }
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+core
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<?php
+
+/**
+ * Settings Model
+ *
+ * Two different types. If you frequesntly need to take only one element
+ * out of a function then the path is put in. If not we will simply set the
+ * function to a variable and take the required path from there.
+ *
+ * REMOVE ALL $path requirements
+ * You can get a single element from any function with...
+ * Settings::members()['verification']
+ *
+ * @package Core
+ * @author  Steve Ball <steve@follyball.co.uk>
+ * @copyright Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
+ *
+ * TODO: Sort out the 404 etc
+ */
+
+// Include the initiation file
+require_once 'src/init.php';
+
+class Messages
+{
+
+    public static function alert ($params) {
+        $alert_content = [
+            'heading' => 'Errors',
+            'content' => 'Please correct the following errors..<br>{{errors}}',
+            'dismissible' => true,
+            'alert_color' => 'danger',
+            'class' => 'mb-4'
+        ];
+
+        if(isset($params['title'])) {
+            if ($params['title']) {
+                $alert_content['heading'] = $params['title'];
+            }
+        }
+
+        if(isset($params['content'])) {
+            if(is_array($params['content'])) {
+
+                $alert_content['content'] = '';
+                foreach ($params['content'] as $value) {
+                    $alert_content['content'] .= Php2Html::p([
+                        'content' => $value
+                    ]);
+                }
+            } else {
+                $alert_content['content'] = Php2Html::p([
+                    'content' => $params['content']
+                ]);
+            }
+        }
+
+        if(isset($params['alert_color'])) {
+            $alert_content['color'] = $params['alert_color'];
+        }
+
+
+        if(isset($params['errors'])) {
+            $alert_content['content'] .=  Php2Html::p([
+                'content' => $params['errors']
+            ]);
+        }
+
+        if(isset($params['insert_id']) && $params['insert_id']) {
+            $alert_content['content'] .=  Php2Html::p([
+                'content' => 'The id of the new record is ' . $params['insert_id'] . '.'
+            ]);
+        }
+
+        if(isset($params['dismissible'])) {
+            $alert_content['dismissible'] = $params['dismissible'];
+        }
+
+
+
+            return Php2Bs::bs_alert(
+                $alert_content
+            );
+
+    }
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<?php
+
+/**
+ * Bootstrap class
+ *
+ * Turns various Bootstrap 4 components into re-usable functions.
+ *
+ * Extends Php2Html to incorporate the quick tag building functions
+ *
+ * Asume that all can have a parameter of content, id, class etc unless stated
+ *
+ * most take parameters that are passed in and pass them straight on but there ares some exceptions.
+ *
+ * @package Core
+ * @author  Steve Ball <steve@follyball.co.uk>
+ * @copyright Copyright (c) 2018 Steve Ball <steve@follyball.co.uk>
+ *
+ *
+ * TODO: Block Button - logout form
+ */
+class Php2Bs extends Php2Html {
+
+    /**
+     * Button
+     *
+     * Creates a default Bootstrap button and allows all of the parameters that
+     * can be set for Php2Html::button ().
+     *
+     * There are two other parameters that can be set
+     * 'size' will add the specified btn-{size} class.
+     * 'color' will add the specified btn-{color} class.
+     *
+     * For example
+     *
+     * Php2Bs::bs_button ([
+     *     'color' => 'primary',
+     *     'size' => 'sm',
+     *     'content' => 'Login',
+     * ]);
+     * would create
+     * <button class="btn btn-primary btn-sm">
+     *
+     * @param  array    $params     Settings
+     * @return string   <button class="btn">
+     */
+    public static function bs_button($params) {
+        $class = 'btn';
+
+        if(isset($params['color'])) {
+            $class .= ' btn-'.$params['color'];
+        }
+
+        if(isset($params['size'])) {
+            $class .= ' btn-'.$params['size'];
+        }
+
+        $class .= (isset($params['class'])) ? ' '.$params['class']:'';
+
+        $params['class'] = $class;
+
+        return Php2Html::button (
+           $params
+        );
+    } // bs_button ()
+
+    /**
+     * Collapse link
+     *
+     * A link that has a linked element which it will show and hide when clicked
+     *
+     * @param  array    $params     Settings
+     * @return string   <a data-toggle="collapse" data-target="xxx">
+     */
+    public static function bs_collapse_link ($params) {
+
+        $params['data_attr'] = [
+            'toggle' => 'collapse',
+            'target' => '#'.$params['target'],
+        ];
+
+        $params['aria'] = [
+            'controls' => $params['target'],
+            'expanded' => 'false',
+            'label' => $params['label'],
+        ];
+
+        $params['content'] = Php2Html::span ([
+                'content' => '',
+                'class' => 'navbar-toggler-icon'
+        ]);
+
+        unset($params['target']);
+        unset($params['label']);
+
+        return Php2Html::a (
+           $params
+        );
+    } // bs_collapse_link ()
+
+    /**
+     * Container
+     * Creates a container div as part of the Bootstrap grid system.
+     *
+     * Available parameters
+     * 'container_type'
+     * An optional parameter that can only be set to 'fluid'. The will create a
+     * fluid container as opposed to a fixed width one.
+     *
+     * @param  array    $params     Settings
+     * @return string   <div class="container">
+     * @return string   <div class="container-fluid">
+     */
+    public static function bs_container($params) {
+        $params['container_type'] = isset($params['container_type']) ? 'container-'.$params['container_type'] : 'container' ;
+        $params['class'] = (isset($params['class'])) ? $params['container_type'] . ' ' . $params['class'] : $params['container_type'];
+        return Php2Html::div (
+            $params
+        );
+    } // bs_container ()
+
+    /**
+     * Navbar dropdown menu Link
+     *
+     * A link to be shown in a dropdown menu on the navbar. These will be passed
+     * into the dropdown (bs_nav_dropdown) as 'menu'
+     *
+     * Available parameters
+     * 'href'
+     * The link to go to, generally as a relative path from the site root (/Admin/Users).
+     *
+     * @param  array    $params     Settings
+     * @return string   <a class="dropdown-item">
+     */
+    public static function bs_dropdown_item($params) {
+
+        $params['class'] = (isset($params['class'])) ? 'dropdown-item ' . $params['class'] : 'dropdown-item';
+
+        return Php2Html::a (
+            $params
+        );
+    } // bs_dropdown_item
+
+    /**
+     * Checkbox with label
+     *
+     * Shows a Bootstrap checkbox and label combination. We build it all in
+     * one go so pass the settings in as an array of three different arrays.
+     *
+     * 'label' refers the label of the checkbox. By default, this will already have 'input-group' as a class.
+     *
+     * 'prepend' sets the element prepended to the start of the input. This is
+     * controlled by the bs_input_group_prepend () function.
+     *
+     * 'input' relates to anything to do with the input itself and is controlled
+     * by the various bs_input_xxx() functions.
+     *
+     * Available parameters
+     * 'href'
+     * The link to go to, generally as a relative path from the site root (/Admin/Users).
+     *
+     * @param  array    $params     Settings
+     * @return string   <div class="bs_form_check">
+     */
+    public static function bs_form_check($params) {
+
+        $params['class'] = (isset($params['outer']['class'])) ? 'form-check ' . $params['outer']['class'] : 'form-check';
+
+        $params['content'] = self::bs_form_check_input ($params['checkbox'])
+        .self::bs_form_check_label ($params['label']);
+
+        return Php2Html::div (
+            $params
+        );
+    }
+
+    /**
+     * Checkbox
+     *
+     * Shows a Bootstrap checkbox.
+     *
+     * Accepts all standard parameters but also sets a default class of
+     * 'form-check-input' by default.
+     *
+     * @param  array    $params     Settings
+     * @return string   <input type="checkbox" class="form-check-input">
+     */
+    public static function bs_form_check_input($params) {
+        $params['class'] = (isset($params['class'])) ? 'form-check-input ' . $params['class'] : 'form-check-input';
+
+        return Php2Html::checkbox (
+            $params
+        );
+    } // bs_form_check_input ()
+
+    /**
+     * Checkbox label
+     *
+     * Shows a Bootstrap checkbox label.
+     *
+     * Accepts all standard parameters but also sets a default class of
+     * 'form-check-label' by default.
+     *
+     * @param  array    $params     Settings
+     * @return string   <div class="form-check-label">
+     */
+    public static function bs_form_check_label($params) {
+        $params['class'] = (isset($params['class'])) ? 'form-check-label ' . $params['class'] : 'form-check-label';
+
+        return Php2Html::div (
+            $params
+        );
+    } // bs_form_check_label ()
+
+    /**
+     * Input group
+     *
+     * Single function to create an input with an element prepended to the start
+     * of it.
+     *
+     * As this creates the everything in one go, we pass the settings in as an
+     * array of three different arrays.
+     *
+     * 'group' refers the entire object so would generally only have classes
+     * passed in. By default, this will already have 'input-group' as a class.
+     *
+     * 'prepend' sets the element prepended to the start of the input. This is
+     * controlled by the bs_input_group_prepend () function.
+     *
+     * 'input' relates to anything to do with the input itself and is controlled
+     * by the various bs_input_xxx() functions.
+     *
+     * @param  array    $params     Settings
+     * @return string   <div class="input-group"><div class="input-group-prepend"><span class="input-group-text">
+     */
+    public static function bs_input_group($params) {
+        $params['group']['class'] = (isset($params['group']['class'])) ? 'input-group ' . $params['group']['class'] : 'input-group';
+
+        $params['group']['content'] = self::bs_input_group_prepend (
+            $params['prepend']
+        );
+
+        $input_type = 'bs_input_'.$params['input']['type'];
+        unset($params['input']['type']);
+
+        $params['group']['content'] .= self::$input_type (
+            $params['input']
+        );
+
+        return Php2Html::div (
+            $params['group']
+        );
+    } // bs_input_group
+
+    /**
+     * Input group prepend
+     *
+     * Creates an element to prepended to the start of an input.
+     *
+     * A prepend consists of two different parts. Externally it is a div, but,
+     * whatever it needs to display is placed inside a span. With that in mind,
+     * we pass the settings in as an array of three different arrays.
+     *
+     * 'class' refers to classes that effect the entire object.
+     *
+     * 'outer' relates to the div that wraps it all. This will already have a
+     * default class of 'input-group-prepend'.
+     *
+     * 'inner' relates to the span that will actually contain the text or symbol
+     * to display. This will already have a default class of 'input-group-text'.
+     *
+     * @param  array    $params     Settings
+     * @return string   <div class="input-group-prepend"><span class="input-group-text">
+     */
+    public static function bs_input_group_prepend($params) {
+        $params['outer']['class'] = (isset($params['class'])) ? 'input-group-prepend ' . $params['class'] : 'input-group-prepend';
+
+        $params['inner']['class'] = 'input-group-text';
+        $params['inner']['content'] = $params['content'];
+
+        if(isset($params['id'])) {
+            $params['inner']['id'] = $params['id'];
+        }
+
+        $params['outer']['content'] = Php2Html::span (
+            $params['inner']
+        );
+
+
+        return Php2Html::div (
+            $params['outer']
+        );
+    } // bs_input_group_prepend
+
+    /**
+     * Collapsing navbar section
+     *
+     * Accepts all standard parameters but also sets a default class of 'collapse navbar-collapse'.
+     *
+     * @param  array    $params     Settings
+     * @return string   <div class="collapse navbar-collapse">
+     */
+    public static function bs_navbar_collapse ($params) {
+        $params['class'] = (isset($params['class'])) ? 'collapse navbar-collapse ' . $params['class'] : 'collapse navbar-collapse ';
+        return Php2Html::div (
+            $params
+        );
+    } // bs_navbar_collapse
+
+    /**
+     * List Group
+     *
+     * Creates a list group from an array of links.
+     *
+     * Accepts all standard parameters but also sets a default class of 'list-group'
+     * to the parent <ul> and creates the list items using bs_list_group_item (). If
+     * the array has a 'href' parameter, the items will become <a>'s, otherwise
+     * they will be <li>'s.
+     *
+     * The array of items should be passed in as content.
+     *
+     * @param  array    $params     Settings
+     * @return string   <ul class="list-group"><li class="list-group-item">
+     * @return string   <ul class="list-group"><a class="list-group-item">
+     */
+    public static function bs_list_group ($params) {
+
+        $params['class'] = (isset($params['class'])) ? 'list-group ' . $params['class'] : 'list-group';
+
+        $list_items = '';
+
+        foreach ($params['content'] as $items => $item) {
+
+            if(isset($item['href'])) {
+                $item['tag'] = 'a';
+                $item['class'] = (isset($item['link_class'])) ? $item['link_class'] : '';
+                $item['content'] = $items;
+            } else {
+                $item['content'] = $items;
+            }
+
+            $list_items .= self::bs_list_group_item (
+                $item
+            );
+        }
+
+        $params['content'] = $list_items;
+
+        return Php2Html::ul (
+            $params
+        );
+    } // bs_list_group ()
+
+    /**
+     * List Group Item
+     *
+     * Creates a list group item as either an <a> or a <li>. To set an <a> pass
+     * in a 'tag' parameter of 'a'.
+     *
+     * Accepts all standard parameters but also sets a default class of
+     * 'list-group-item' by default.
+     *
+     *
+     * @param  array    $params     Settings
+     * @return string   <li class="list-group-item">
+     * @return string   <a class="list-group-item">
+     */
+    public static function bs_list_group_item ($params) {
+        $params['class'] = (isset($params['class'])) ? 'list-group-item ' . $params['class'] : 'list-group-item';
+
+        if(isset($params['tag'])) {
+
+            if($params['tag'] == 'a') {
+                $params['class'] .= ' list-group-item-action';
+            }
+
+            return Php2Html::$params['tag'] (
+                $params
+            );
+        } else {
+            return Php2Html::li (
+                $params
+            );
+        }
+    } // bs_list_group_item ()
+
+    /**
+     * Navbar
+     *
+     * Creates the outer most parts of a navbar ready to place the navigation in.
+     *
+     * Accepts all standard parameters but also sets a default class of 'navbar'.
+     *
+     * @param  array    $params     Settings
+     * @return string   <nav class="navbar">
+     */
+    public static function bs_navbar($params) {
+        $params['class'] = (isset($params['class'])) ? 'navbar ' . $params['class'] : 'navbar ';
+        return Php2Html::nav (
+            $params
+        );
+    } // bs_navbar
+
+    /**
+     * Navbar section
+     *
+     * Accepts all standard parameters but also sets a default class of 'navbar-nav'.
+     *
+     * @param  array    $params     Settings
+     * @return string   <ul class="navbar-nav">
+     */
+    public static function bs_navbar_nav ($params) {
+        $params['class'] = (isset($params['class'])) ? 'navbar-nav ' . $params['class'] : 'navbar-nav ';
+        return Php2Html::ul (
+            $params
+        );
+    } // bs_navbar_nav
+
+    /**
+     * Navbar toggle button
+     *
+     * Available parameters
+     * 'button_class'
+     * Adds additional classes to the button itself.
+     * 'navbar-toggler' will already be added by default.
+     *
+     * 'target'
+     * This will be the id of the element that the toggle button is showing and
+     * hiding so populates the 'data-target' parameter. This will also populate
+     * the 'aria-controls' parameter.
+     *
+     * 'label'
+     * Sets the content of the 'aria-label' parameter.
+     *
+     * @param  array    $params     Settings
+     * @return string   <button type="button" class="navbar-toggler">
+     */
+    public static function bs_navbar_toggler ($params) {
+
+        $params['class'] = (isset($params['button_class'])) ? 'navbar-toggler '.$params['button_class']:'navbar-toggler';
+
+        $params['data_attr'] = [
+            'toggle' => 'collapse',
+            'target' => '#'.$params['target'],
+        ];
+
+        $params['aria'] = [
+            'controls' => $params['target'],
+            'expanded' => 'false',
+            'label' => $params['label'],
+        ];
+
+        $params['content'] = Php2Html::span ([
+                'content' => '',
+                'class' => 'navbar-toggler-icon'
+        ]);
+
+        unset($params['target']);
+        unset($params['label']);
+
+        return Php2Html::button (
+           $params
+        );
+    } // bs_navbar_toggler ()
+
+    /**
+     * Full navbar dropdown menu
+     *
+     * As this creates the button, dropdown and all links in one go, we pass the
+     * settings in as an array of three different arrays.
+     *
+     * 'li' refers to the trigger button shown on the menu and should only have
+     * non-displaying parameters. The content itself will be the 'a' set in the
+     * next part.
+     *
+     * 'a' controls the visible menu link itself and can take most standard
+     * parameters. It also needs a 'id' parameter that will link the button and
+     * menu.
+     *
+     * 'menu' simply contains the links to go into the sub menu as 'content'. You
+     * can also add the usual parameters.
+     *
+     * @param  array    $params     Settings
+     * @return string   <li class="nav-item dropdown"><a><div class="dropdown-menu>{links}
+     */
+    public static function bs_nav_dropdown($params) {
+
+        $params['li']['class'] = (isset($params['li']['class'])) ? 'nav-item dropdown ' . $params['li']['class'] : 'nav-item dropdown';
+
+        $params['a']['class'] = (isset($params['a']['class'])) ? 'nav-link dropdown-toggle ' . $params['a']['class'] : 'nav-link dropdown-toggle';
+
+        $params['a']['link'] = '#';
+
+        $params['a']['aria']['expanded'] = 'false';
+        $params['a']['aria']['haspopup'] = 'true';
+        $params['a']['data_attr']['toggle'] = 'dropdown';
+        $params['menu']['aria']['labelledby'] = $params['a']['id'];
+
+        $params['li']['content'] = Php2Html::a (
+                $params['a']
+                ).
+                self::bs_dropdown_menu (
+                    $params['menu']
+            );
+        return Php2Html::li (
+            $params['li']
+        );
+    } // bs_nav_dropdown ()
+
+    /**
+     * Navbar Item
+     *
+     * A <li> to sit within a nav bar, generally containing a link.
+     *
+     * @param  array    $params     Settings
+     * @return string   <li class="nav-item">
+     */
+    public static function bs_nav_item ($params) {
+        $params['class'] = (isset($params['class'])) ? 'nav-item ' . $params['class'] : 'nav-item ';
+        return Php2Html::li (
+            $params
+        );
+    } // bs_nav_item()
+
+    /**
+     * Navbar Link
+     *
+     * A link to be shown on the navbar, generally inside a nav item (bs_nav_item).
+     *
+     * Available parameters
+     * 'href'
+     * The link to go to, generally as a relative path from the site root (/Admin/Users).
+     *
+     * @param  array    $params     Settings
+     * @return string   <a class="nav-link">
+     */
+    public static function bs_nav_link ($params) {
+        $params['class'] = (isset($params['class'])) ? 'nav-link ' . $params['class'] : 'nav-link';
+        return Php2Html::a (
+            $params
+        );
+    } // bs_nav_link ()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    public static function bs_col_form_label ($params)
+    {
+        $default_class = (isset($params['size'])) ? 'col-form-label-'.$params['size'].' ' : 'col-form-label ';
+        $params['class'] = (isset($params['class'])) ? $default_class . $params['class'] : $default_class;
+        return Php2Html::label (
+            $params
+        );
+    }
+
+
+    public static function bs_footer ($params)
+    {
+        $params['class'] = (isset($params['class'])) ? 'footer ' . $params['class'] : 'footer ';
+        return Php2Html::footer (
+            $params
+        );
+    }
+
+
+
+    public static function bs_form_row($params)
+    {
+        $params['class'] = (isset($params['class'])) ? 'form-row ' . $params['class'] : 'form-row';
+
+        return Php2Html::div (
+            $params
+        );
+    }
+
+    public static function bs_form_group($params)
+    {
+        $params['class'] = (isset($params['class'])) ? 'form-group ' . $params['class'] : 'form-group';
+
+        return Php2Html::div (
+            $params
+        );
+    }
+
+    public static function bs_form_text($params)
+    {
+        $params['class'] = (isset($params['class'])) ? 'form-text ' . $params['class'] : 'form-text';
+
+        return Php2Html::small (
+            $params
+        );
+    }
+
+
+
+
+    public static function bs_outline_btn($params)
+    {
+
+        $params['class'] = 'btn btn-outline-' . $params['class'];
+
+
+        return Php2Html::button (
+           $content,
+           $params
+        );
+
+    }
+
+
+
+
+
+    public static function bs_custom_radio_wrapper($params)
+    {
+        $params['class'] = (isset($params['class'])) ? 'custom-control custom-radio ' . $params['class'] : 'custom-control custom-radio';
+
+        return Php2Html::div (
+            $params
+        );
+    }
+    public static function custom_control_label($params)
+    {
+        $params['class'] = (isset($params['class'])) ? 'custom-control-label ' . $params['class'] : 'custom-control-label';
+
+        return Php2Html::label (
+            $params
+        );
+    }
+
+    public static function bs_custom_radio($params)
+    {
+        $params['class'] = (isset($params['class'])) ? 'custom-control-input ' . $params['class'] : 'custom-control-input';
+
+        return Php2Html::radio (
+            $params
+        );
+    }
+
+
+    public static function bs_input_text($params)
+    {
+        $params['class'] = (isset($params['class'])) ? 'form-control ' . $params['class'] : 'form-control';
+
+        if(isset($params['size'])) {
+            $params['class'] .= ' form-control-'.$params['size'];
+        }
+        return Php2Html::input_text (
+            $params
+        );
+    }
+
+    public static function bs_textarea($params)
+    {
+        $params['class'] = (isset($params['class'])) ? 'form-control ' . $params['class'] : 'form-control';
+
+        return Php2Html::textarea (
+            $params
+        );
+    }
+    public static function bs_input_password($params)
+    {
+        $params['class'] = (isset($params['class'])) ? 'form-control ' . $params['class'] : 'form-control';
+
+        return Php2Html::input_password (
+            $params
+        );
+    }
+
+    public static function bs_input_email($params)
+    {
+        $params['class'] = (isset($params['class'])) ? 'form-control ' . $params['class'] : 'form-control';
+
+        return Php2Html::input_email (
+            $params
+        );
+    }
+
+
+
+    public static function bs_dropdown_menu ($params)
+    {
+        $params['class'] = (isset($params['class'])) ? 'dropdown-menu ' . $params['class'] : 'dropdown-menu ';
+        return Php2Html::div (
+            $params
+        );
+    }
+
+
+
+
+    public static function bs_nav ($params)
+    {
+        $params['class'] = (isset($params['class'])) ? 'nav ' . $params['class'] : 'nav ';
+        return Php2Html::ul (
+            $params
+        );
+    }
+
+
+
+    public static function bs_select($params)
+    {
+        $params['class'] = (isset($params['class'])) ? 'form-control ' . $params['class'] : 'form-control';
+
+        return Php2Html::select (
+            $params
+        );
+    }
+
+    public static function bs_card($array)
+    {
+        $header = '';
+        $body = '';
+        $footer = '';
+
+
+        if(isset($array['header']))
+        {
+            $array['header']['class'] = (isset($array['header']['class'])) ? 'card-header ' . $array['header']['class'] : 'card-header';
+
+            $header = Php2Html::div (
+                $array['header']
+            );
+        }
+
+        if(isset($array['body']))
+        {
+            $array['body']['class'] = (isset($array['body']['class'])) ? 'card-body ' . $array['body']['class'] : 'card-body';
+
+            $body = Php2Html::div (
+                $array['body']
+            );
+        }
+
+        if(isset($array['footer']))
+        {
+            $array['footer']['class'] = (isset($array['footer']['class'])) ? 'card-footer ' . $array['footer']['class'] : 'card-footer';
+
+            $footer = Php2Html::div (
+                $array['footer']
+            );
+        }
+
+        $array['class'] = (isset($array['class'])) ? 'card ' . $array['class'] : 'card';
+
+        $array['content'] = $header.$body.$footer;
+
+        return  Php2Html::div (
+            $array
+        );
+
+
+    }
+
+
+    public static function bs_alert($array)
+    {
+        $core_class = 'alert alert-';
+        $core_class .=(isset($array['color'])) ? $array['color'].' ': 'info ';
+
+        $array['class'] = (!isset($array['class'])) ? $core_class : $core_class.$array['class'];
+
+        $content = $array['content'];
+        $array['content'] ='';
+
+        if($array['heading'])
+		{
+		    $array['content'] .= Php2Html::h([
+                'size' => '4',
+                'class' => 'alert-heading',
+                'content' => $array['heading']
+            ]);
+		}
+        $array['content'] .= $content;
+        if($array['dismissible'])
+		{
+            $array['class'] .= ' alert-dismissible';
+		    $array['content'] .= '	<button type="button" class="close" data-dismiss="alert" aria-label="Close">';
+        	$array['content'] .= '		<span aria-hidden="true">&times;</span>';
+    		$array['content'] .= '	</button>';
+		}
+
+        $array['role'] = 'alert';
+
+        return  Php2Html::div (
+            $array
+        );
+    }
+
+
+	/**
+	 * Alert
+	 *
+	 * @param  string 			$color       danger/info/warning/alert
+	 * @param  string/null 		$heading     Optional text to display in 'alert-heading'
+	 * @param  string 			$body        The body text for the alert
+	 * @param  boolean 			$dismissible Whether to make the alert dismissible
+	 * @example 	https://v4-alpha.getbootstrap.com/components/alerts/
+	 *
+	 * @return string           Bootstrap Alert
+	 */
+
+
+
+
+    public static function makeAlert($color = 'info', $heading=null, $body, $dismissible=false)
+	{
+		// Create the opening alert tage with the correct colour
+        $out = '<div class="alert alert-'.$color.'">';
+
+		// If $dismissible=true add the dismiss button
+		if($dismissible)
+		{
+		    $out .= '	<button type="button" class="close" data-dismiss="alert" aria-label="Close">';
+        	$out .= '		<span aria-hidden="true">&times;</span>';
+    		$out .= '	</button>';
+		}
+		// If $heading is not empty, add it
+        if($heading)
+		{
+            $out .= '<h4 class="alert-heading">'.$heading.'</h4>';
+        }
+
+		// Add the body text
+        $out .= $body;
+
+		// Close the alert tag
+        $out .= '</div><!-- alert-'.$color. '-->';
+
+        return $out;
+    } // makeAlert
+
+
+
+	/**
+	 * Make a Bootstrap 4 Grid
+	 *
+	 *	We have two functions to simplify make a Bootstrap grid layout.
+	 *
+	 *	row ()		Makes a <div class="row">
+	 *	column 		Makes a <div class="col-xx-xx">
+	 *
+	 * These can be used in conjuction with each other in an unlimited amount
+	 * of nesting. Each function has a parameter called $inc which will contain
+	 * an array of anything to be displayed within.
+	 *
+	 * To make a row with an id of 'content' and within it a small column with a
+	 * class of col-sm-4 and a larger column with a class of col-sm-8, you would use
+	 *
+	 *
+	 * Php2Bs::row (
+	 * 		$id = 'content',
+	 * 		$class = null,
+	 * 		$inc = array (
+	 * 			Php2Bs::column (
+	 *				$id = null,
+	 * 				$class = 'col-sm-4',
+	 * 				$inc = array (
+	 * 					...
+	 * 				)
+	 * 			),
+	 * 			Php2Bs::column (
+	 *				$id = null,
+	 * 				$class = 'col-sm-8',
+	 * 				$inc = array (
+	 * 					...
+	 * 				)
+	 * 			),
+	 * 			Php2Bs::column (
+	 *
+	 * 			),
+	 *
+	 * 		)
+	 * )
+	 *
+	 * The $inc within the column sections can be an array of any elements that
+	 * you want and can be a mixture of several types including more row() and
+	 * column() functions.
+	 * Although you can use plain text as an array element, it is recommended to put
+	 * anything you need into indivudal functions and call them.
+	 *
+	 */
+
+	/**
+	 * Make a Bootstrap 4 Grid Row
+	 *
+	 * Creates a <div class="row"></div> with any attributes and content as well as
+	 * a formatted end html comment
+	 *
+	 * @param  string/null 		$id    The id attribute of the row if required
+	 * @param  string/null 		$class The class attribute of the row if required
+	 * @param  array  			$inc   An array of columns to show
+	 * @return string        	Boostrap Row
+	 */
+
+     public static function bs_row($params)
+ 	{
+        $params['class'] = (isset($params['class'])) ? 'row ' . $params['class'] : 'row';
+
+
+        return Php2Html::div(
+            $params
+        );
+
+    }
+
+
+	/**
+	 * Make a Bootstrap 4 Grid Column
+	 *
+	 * Creates a <div class="col-xx-xx"></div> with any attributes and content as well as
+	 * a formatted end html comment
+	 *
+	 * @param  string/null 		$id    The id attribute of the column if required
+	 * @param  string/null 		$class The class attribute of the column if required
+	 * @param  array  			$inc   An array of content to show
+	 * @return string        	Boostrap Column
+	 */
+
+     // public static function column (
+     //     $id = null,
+     //     $class = null,
+     //     $inc = array ()
+     // )
+
+    public static function bs_column($params)
+   {
+        $params['class'] = (isset($params['class'])) ?  $params['class'] : 'col';
+
+
+        $content = Php2Html::div(
+            $params
+        );
+
+        return $content;
+    }
+
+
+    public static function quickCollapse ($params = array ())
+	{
+        $out = '';
+
+        $out .= '<p';
+        if (isset($params['wrap_class'])) {
+            $out .= ' class="'.$params['wrap_class'].'"';
+        }
+        $out .= '>';
+
+        $out .= '<a class="btn ';
+        if (isset($params['button']['size'])) {
+            $out .= 'btn-'.$params['button']['size'].' ';
+        }
+
+        if (isset($params['button']['type'])) {
+            $out .= 'btn-'.$params['button']['type'].'-'.$params['button']['color'].'';
+        }
+        else
+        {
+            $out .= 'btn-'.$params['button']['color'].'';
+        }
+        if (isset($params['button']['class'])) {
+            $out .= '  '.$params['button']['class'];
+        }
+        $out .= '"';
+        $out .= ' data-toggle="collapse" href="#'.$params['key'].'" aria-expanded="false" aria-controls="'.$params['key'].'e">';
+        $out .= $params['text'];
+        $out .= '</a>';
+
+        $out .= '</p>';
+
+        $out .= '<div class="collapse" id="'.$params['key'].'">';
+
+        $out .= $params['content'];
+
+        $out .= '</div>';
+
+        return $out;
+    }
+    public static function breadcrumb ($array)
+	{
+
+        $home = (isset($array['site'])) ? '/' . $array['site'] : '/';
+        $output = '<nav aria-label="breadcrumb" class="mb-1 " role="navigation">';
+        $output .= '<ol class="breadcrumb m-0 p-1">';
+
+        $output .= '<li class="breadcrumb-item"><a href="'.$home.'">Home</a></li>';
+
+        if(isset($array['path']))
+        {
+            foreach ($array['path'] as $key => $value) {
+                $output .= '<li class="breadcrumb-item"><a href="'.$home.$key.'">'.$value.'</a></li>';
+            }
+        }
+
+        $output .= '<li class="breadcrumb-item active" aria-current="page">'.$array['current'].'</li>';
+
+        $output .= '</ol>';
+        $output .= '</nav>';
+
+        return $output . self::htmlComment('breadcrumb');
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<?php
+
+/**
+ * Database class
+ *
+ * Controls all database CRUD functions as well as opening up an instance
+ * of this class.
+ *
+ * @package Core
+ * @author  Steve Ball <steve@follyball.co.uk>
+ * @copyright Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
+ *
+ */
+
+// Include the inititisation file
+require_once 'src/init.php';
+
+class DB
+{
+	// Set any private variables
+    private static $_instance = null;
+    private $_pdo,
+            $_query,
+            $_error = false,
+            $_results,
+            $_count = 0;
+
+	/**
+	 * Construct the database connection
+	 *
+	 *	Opens up a connection to the database and assigns it to
+	 *	$this->_pdo to make it re-usable.
+	 *
+	 * The connection parameters are called using Globals on values held
+	 * in /app/core/config_files/db.php
+	 *
+	 * @return 	Database connection
+	 */
+    private function __construct()
+	{
+        $db = Settings::db();
+
+        try
+		{
+            $this->_pdo = new PDO('mysql:host=' . $db['host'] . ';dbname=' . $db['dbname'],  $db['username'], $db['password']);
+
+        } catch(PDOException $e) {
+            die($e->getMessage());
+        }
+    } //__construct ()
+
+	/**
+	 * Create a new Database instance
+	 *
+	 * Creates a new instance of the database class that can be assigned to a
+	 * variable and re-used.
+	 *
+	 * @return Database connection
+	 * @example $this->db = DB::dbConnect();
+	 */
+    public static function dbConnect()
+	{
+		// If an instance has not already been set, set it
+        if(!isset(self::$_instance)) {
+            self::$_instance = new DB();
+        }
+		// Return the instance
+        return self::$_instance;
+    } // dbConnect()
+
+	/**
+	 * Perform a query on an SQL statement
+	 *
+	 * All of the variables created are private so cannot be called
+	 * externally, but each has it's own public function.
+	 *
+	 * If you are using parameters, you need to replace the position where
+	 * their values would be with ?
+	 *
+	 * self::db()->query("SELECT * FROM user_hash WHERE email = ? AND hash = ?", array($email, $hash));
+	 *
+	 * @param  string 	$sql    SQL statement
+	 * @param  array  	$params Paremeters to add to the string
+	 * @return array         	Query results, errors and count
+	 */
+    public function query ($sql, $params = array()) {
+        echo $sql; nicePrint_r($params);
+		// Set error to false by default
+        $this->error = false;
+		/*
+			We attempt to prepare the query and if it is succesful,
+			we bind the parameters and execute it.
+		 */
+        if ($this->_query = $this->_pdo->prepare($sql))
+		{
+			/*
+				The query is prepared so we have to check to see if
+				there are any parameters.
+
+				If there are we loop through them annd then bind them
+				to the query
+			 */
+
+			// Set the counter to one
+            $x = 1;
+
+			// Check to see if there are any parameters
+            if(count($params))
+			{
+				/*
+					There are parameters so we loop through them and
+					bind each
+				 */
+                foreach($params as $param) {
+					// Bind the parameter with it's counter position
+                    $this->_query->bindValue($x, $param);
+
+					// Increment the counter
+                    $x++;
+                }
+            }
+
+
+			/*
+				Now that the parameters have been bound, we try to execute
+				the query.
+				If succesful we set the results and row count, otherwise we
+				set the error.
+			 */
+            if($this->_query->execute())
+			{
+				// The query executed succesfully so set the results and count
+                $this->_results = $this->_query->fetchAll(PDO::FETCH_OBJ);
+                $this->_count = $this->_query->rowCount();
+            } else
+			{
+				// The query failed so set error to true
+                $this->_error = true;
+            }
+        } // prepare
+
+		// Return anything that has been set as a result of the wquery attempt
+        return $this;
+
+    } // query ()
+
+
+	/**
+	 * Perfom a simple action on a table
+	 *
+	 * Allows you to perform a quick SELECT or DELETE on a table when
+	 * only one parameter needs to be set.
+	 *
+	 * @param  string $action SELECT/DELETE
+	 * @param  string $table  The name of the table
+	 * @param  array  $where  An array of parameters - field, operator, value
+	 * @return array          The output from the query() function in this class
+	 */
+    public function action ($action, $table, $where = array())
+	{
+		/*
+			A $where array MUST contain exactly three paramenters for this to
+			work so the first thing to do is check that.
+
+		 */
+        if (count($where) === 3)
+		{
+			// There are three parameters so set the available operators
+            $operators = array('=', '>', '<', '>=', '<=');
+
+			/*
+				As the $where array is set as field, operator, value we can easily set them to named variables
+			 */
+            $field = $where[0];
+            $operator = $where[1];
+            $value = $where[2];
+
+			/*
+				The next check is to make sure that the supplied operator is
+				one of the ones set in $operators
+			 */
+            if (in_array($operator, $operators))
+			{
+				// The operator matches so create the SQL statement
+                $sql = "{$action} FROM {$table} WHERE {$field} {$operator} ?";
+
+				// Try to execute the query using the query() function.
+                if(!$this->query($sql, array($value))->error()) {
+
+					// Return anything returned from the query
+                    return $this;
+                }
+            } // Operator check
+        }// count check
+
+        return false;
+    } // action ()
+
+	/**
+	 * Perform a quick select on a table
+	 *
+	 * @param  	string 	$table 	Table name
+	 * @param  	array  $where  An array of parameters - field, operator, value
+	 * @return 	Query results
+	 * @example get('users', array('joined', '>', '2017-01-01'))
+	 */
+    public function get ($table, $where)
+	{
+        return $this->action('SELECT *', $table, $where);
+    } // get ()
+
+	/**
+	 * Perform a quick delete on a table
+	 *
+	 * @param  	string 	$table 	Table name
+	 * @param  	array  $where  An array of parameters - field, operator, value
+	 * @return 	Query results
+	 * @example delete('users', array('joined', '>', '2017-01-01'))
+	 */
+    public function delete ($table, $where)
+	{
+        return $this->action('DELETE', $table, $where);
+    } // delete ()
+
+
+	/**
+	 * Insert a row into a table
+	 *
+	 * @param  	string 	$table 	Table name
+	 * @param  	array  	$fields An array of table fields and values
+	 * @return 	Query results
+	 * @example insert('users', array('username' => 'SteveB', 'active' => '1'))
+	 */
+    public function insert ($table, $fields = array())
+	{
+		/*
+			The $fields array will have a $key => $value pairing for
+			each field having data inserted. The $key will matche the
+			table field name and the $value will be the value to insert.
+
+			We use array_keys extract the keys from the $fields array
+			and assigned them to $keys.
+		 */
+        $keys = array_keys($fields);
+
+		// Create a default $values variable
+        $values = '';
+
+		// Set the counter to 1
+        $x = 1;
+
+		/*
+			Loop through the fields and for each one, create a ? to
+			place in the fields section of the insert statement
+		 */
+        foreach($fields as $field)
+		{
+			// Add a placeholder to $values
+            $values .= '?';
+
+			// If we are not on the last pairing, add a comma to $values
+            if ($x < count($fields))
+			{
+                $values .= ', ';
+            }
+
+			// Increment the counter
+            $x++;
+        } // foreach
+
+		/*
+			We now have all the information to build the SQL statement by
+			inserting the passed table as well as the fields and values.
+
+			Using the example at the top of this function, the statement would be
+			INSERT INTO `users` (`username`, `active`) VALUES (?, ?)
+
+			We then pass the statement into the query() function
+		 */
+        $sql = "INSERT INTO `{$table}` (`" . implode('`,`', $keys) . "`) VALUES ({$values})";
+
+		// Try to execute the query using the query() function.
+        if (!$this->query($sql,$fields)->error())
+		{
+			// Return anything returned from the query
+			return true;
+        }
+
+        return false;
+
+    } // insert()
+
+
+	/**
+	 * Update a row in a table
+	 *
+	 * @param  	string 	$table 	Table name
+	 * @param   int 	$id     The id of the row to update
+	 * @param  	array  	$fields An array of table fields and values
+	 * @return 	Query results
+	 * @example update('users', 1, array('username' => 'SteveBNew', 'active' => '0'))
+	 */
+    public function update ($table, $id, $fields = array())
+	{
+		// Create a default $set variable to hold the values and fields
+        $set = '';
+
+		// Set the counter to 1
+        $x = 1;
+
+		/*
+			Loop through the fields and for each one, create an x=? to
+			place in the values section of the update statement
+		 */
+        foreach ($fields as $name => $value)
+		{
+			// Add a field = ?
+            $set .= "`{$name}` = ?";
+
+			// If we are not on the last pairing, add a comma to $set
+            if ($x < count($fields)) {
+                $set .= ', ';
+            }
+
+			// Increment the counter
+            $x++;
+        } // foreach
+
+
+		/*
+			We now have all the information to build the SQL statement by
+			inserting the passed table as well as the values in $set.
+
+			Using the example at the top of this function, the statement would be
+			UPDATE `users` SET `username`='SteveBNew',`active`='0' WHERE id=1
+
+			We then pass the statement into the query() function
+		 */
+        $sql = "UPDATE `{$table}` SET {$set} WHERE id = {$id}";
+
+		// Try to execute the query using the query() function.
+        if (!$this->query($sql,$fields)->error())
+		{
+			// Return anything returned from the query
+			return true;
+        }
+
+        return false;
+
+    } // update ()
+
+	//////////////////////////////////////////////////
+	// Public functions to call private variables  //
+	//////////////////////////////////////////////////
+
+	// Allow a single row of results data to be called publically
+    public function first ()
+	{
+        return $this->results()[0];
+    }
+
+	// Allow a results set data to be called publically
+    public function results ()
+	{
+        return $this->_results;
+    }
+
+	// Return a row count
+    public function count ()
+	{
+        return $this->_count;
+    }
+
+	// Return an error
+    public function error ()
+	{
+        return $this->_error;
+    }
+
+     //  Get the id of the last inserted row
+    public function insertId () {
+       return $this->_pdo->lastInsertId();
+    } // insertId ()
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+models
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<?php
+
+/**
+ *  Users Model
+ *
+ *  Contains the standard functions for data
+ *  manipulation, as well as the CRUD forms and displays.
+ *
+ *  Note that Users have a lot more functionality than mosts sections so there is a lot more to this one than most
+ *  models will contain.
+ *
+ *  @package Core
+ *  @author  Steve Ball <steve@follyball.co.uk>
+ *  @copyright Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
+ */
+
+// Include the initiation file
+require_once 'src/init.php';
+
+class M_Ideas
+{
+    private
+        $_data,
+        $_db_table = 'ideas',
+        $_field,
+        $_field_data,
+        $_form_data,
+        $_form_fields,
+        $_params,
+        $_record,
+        $_qry;
+
+    public $_insertId;
+
+    /**
+     * Construct the database connection
+     *
+     *	Opens up a connection to the database and assigns it to
+     *	$this->_pdo to make it re-usable.
+     *
+     * The connection parameters are called using Globals on values held
+     * in /app/core/config_files/db.php
+     *
+     * @return 	Database connection
+     */
+    public function __construct()
+    {
+        $this->_logs = new Logs();
+
+    } //__construct ()
+
+    /**
+     * Connect to the database
+     *
+     * Returns an instance of the database connection to be used
+     * within the class. This is set as a function as it also needs
+     * to be accessed by the model.
+     *
+     * @return  Database connection
+     */
+    protected function db() {
+        return  DB::dbConnect();
+    } // db()
+
+    /**
+     * Get the total number of records
+     *
+     * @return int 	    Count of rows
+     */
+    public function count() {
+        // Select all records from the database
+        $_qry  =  $this->db()->query('SELECT * FROM '.$this->_db_table);
+
+        // Return a count of the records returned
+        return $_qry->count();
+    } // count()
+
+    public function count_pending_ideas() {
+        // Select all records from the database
+        $_qry  =  $this->db()->query('SELECT * FROM '.$this->_db_table.' WHERE `status` = ?', ['p']);
+
+        // Return a count of the records returned
+        return $_qry->count();
+    } // count()
+
+    public function list_pending_ideas() {
+        // Select all records from the database
+        $_qry  =  $this->db()->query('SELECT * FROM '.$this->_db_table.' WHERE `status` = ?', ['p']);
+
+        // Return a count of the records returned
+        return $_qry->results();
+    } // count()
+
+    public function list_pending_comments () {
+        // Select all records from the database
+        $_qry  =  $this->db()->query('SELECT I.`id` idea_id, I.`title` idea_title, I.`details` idea_details, C.* FROM `idea_comments` C LEFT JOIN `ideas` I ON I.`id` = C.`idea` WHERE C.`status` = ?', ['p']);
+
+        // Return a count of the records returned
+        return $_qry->results();
+    }
+
+    public function count_pending_comments() {
+        // Select all records from the database
+        $_qry  =  $this->db()->query('SELECT * FROM `idea_comments` WHERE `status` = ?', ['p']);
+
+        // Return a count of the records returned
+        return $_qry->count();
+    } // count()
+
+    public function countCats() {
+        // Select all records from the database
+        $_qry  =  $this->db()->query('SELECT * FROM `idea_categories`');
+
+        // Return a count of the records returned
+        return $_qry->count();
+    } // count()
+
+    /**
+	 * Create a new record
+	 *
+	 * Collects post data, validates it and inserts it into the database
+	 *
+	 */
+	public function create ($_params=[]) {
+        $_params['created_by'] = Session::get('uid');
+        $_params['created_date'] = date('Y-m-d H:i:s');
+        if (!self::db()->insert($this->_db_table, $_params)){
+            # maybe Redirect::to('404');
+			// The insert was unsuccesful
+			if (Settings::site_details('debug_mode')) {
+                throw new Exception();
+            } else {
+                echo 'Issue with M_Faults->create()';
+            }
+
+			return false;
+		}
+        $this->_insertId = $this->db()->insertId();
+        return true;
+
+	} // create()
+
+    /**
+	 * Create a new record
+	 *
+	 * Collects post data, validates it and inserts it into the database
+	 *
+	 */
+	public function create_comment ($record, $_params=[]) {
+        $_params['idea'] = $record;
+        $_params['created_by'] = Session::get('uid');
+        $_params['created_date'] = date('Y-m-d H:i:s');
+        if (!self::db()->insert('idea_comments', $_params)){
+            # maybe Redirect::to('404');
+			// The insert was unsuccesful
+			if (Settings::site_details('debug_mode')) {
+                throw new Exception();
+            } else {
+                echo 'Issue with M_Faults->create()';
+            }
+
+			return false;
+		}
+        $this->_insertId = $this->db()->insertId();
+        return true;
+
+	} // create()
+
+    /**
+     * Return a records data
+     *
+     * Returns the private $this->_data details
+     * array in a public function
+     *
+     * @return array 	Record data
+     *
+    **/
+    public function data() {
+        return $this->_data;
+    } // data()
+
+    /**
+         * Delete a record
+         *
+         *  Deletes the specified record from $this->crud_table()->name
+         *
+         * @param  int  $record  Record ID
+         */
+	public function delete ($record) {
+		// We do not have to unset, add or amend anything so purely run the delete
+			if(!self::db()->delete($this->_db_table, array('id', '=', $record)))
+			{
+				// The update was unsuccesful
+				throw new Exception('There was a problem updating the account!');
+				// Flash a generic error message
+				$this->crudFlash ('generic_error');
+
+				return false;
+			}
+
+            return true;
+
+	} // delete()
+
+
+    /**
+     *  Check if a record exists
+     *
+     *	Checks to see if $this->data() exists following a find()
+     *
+     **/
+    public function exists() {
+      return ($this->data()) ? true : false;
+    } // exists()
+
+    /**
+     * Find a record
+     *
+     * Finds a record and assigns it's details from the $this->_db_table
+     * table to $this->_data. This can then be accessed from other files
+     * using data().
+     *
+     *
+     * @param  string/email/int 	$group  	Group identifier
+     * @return Boolean/Array
+     */
+    public function find($_record=null) {
+
+        // We only run this if a record has been passed in so check for it
+        if ($_record)
+        {
+            /*
+                A record has been passed in so we now need to check what parameter has
+                been used to determine which field we are going to check it against in the table.
+
+                For Users, the $_record will either be the id or the username so we do not have
+                to manipulate it at all. There will be some occasions where we have to tweak
+                $_record to suit what is stored in the database compared to what we can use in a url. Ideally in these situations, we would use a slug.
+
+                If $_record is a number, we will assume it is the id field as usernames must start with a letter, otherwise it must be the username.
+
+             */
+            if(is_numeric($_record) && (int) $_record == $_record)
+            {
+                // $_record is numeric so we need to look up the id field
+                $_field = 'id';
+            } else
+            {
+                // $_record is not numeric so we need to look up the username or email field depending on the data posted
+                $_field = 'title';
+            }
+
+            // Search the table for the passed in $_record and correct $_field
+            $data = self::db()->get($this->_db_table, array($_field, '=', $_record));
+
+            // If the query returns any rows, set the data to $this->_data and return true
+            if ($data->count()) {
+                $this->_data = $data->first();
+                return true;
+            }
+        }
+        return false;
+    } // find()
+
+    public function comment_form () {
+        // Outline
+        $default_var = 'details';
+
+        $input = Php2Html::label ([
+            'for' => ucfirst($default_var).'_input',
+            'content' => 'Add a comment',
+            'class' => 'mb-0 font-weight-bold',
+            'aria' => [
+                'described-by' => $default_var.'_help'
+            ],
+        ]);
+        $input .= Php2Bs::bs_textarea ([
+            'class' => 'ckeditor',
+            'id' => ucfirst($default_var).'_input',
+            'name' => $default_var,
+            'rows' => 6,
+            'placeholder' => 'Add details of your \'One Thing\'',
+
+        ]); // Php2Bs::bs_input_text
+
+        if(isset($_form_fields[$default_var]['help_text'])) {
+            $input .= Php2Bs::bs_form_text ([
+                'id' => $default_var.'_help',
+                'class' => 'text-muted',
+                'content' => $_form_fields[$default_var]['help_text']
+            ]);
+        }
+
+        $content = Php2Bs::bs_form_row ([
+            'content' => Php2Bs::bs_form_group ([
+                'class' => 'col-md-12',
+                'content' => $input
+            ])
+        ]); // Outline
+
+
+        // Add the button form group
+        $content .= Php2Bs::bs_form_row ([
+            'content' =>
+            Php2Bs::bs_form_group ([
+                'class' => 'col-12',
+                'content' => Php2Bs::bs_button ([
+                    'button_type' => 'submit',
+                    'class' => 'float-right',
+                    'color' => 'primary',
+                    //'size' => 'sm',
+                    'content' =>  'Submit',
+                    'name' => 'add_comment'
+                ]) // Php2Bs::bs_button
+            ]) // Php2Bs::bs_form_group
+        ]); // Button row
+
+        // Return the form
+        return Php2Html::form([
+            'id' => '',
+            'action' => '',
+            'method' => 'post',
+            'class' => '',
+            'content' => $content
+        ]); //  Php2Html::form
+
+
+    }
+
+
+    public function form () {
+        $_field_data = [];
+
+        $_form_fields = [
+            'title' => [
+                'help_text' => 'Clear and descriptive title of the idea.'
+            ],
+            'details' => [
+                'help_text' => 'The full idea.'
+            ],
+            'category' => [
+                'help_text' => 'Choose the most suitable category. If none fit, select \'Other\'.'
+            ],
+
+        ];
+
+
+       foreach ($_form_fields as $key => $value) {
+            // Check for errors
+            if (isset($_params['errors'][$key])) {
+                // Errors found for the field so add invalid class
+                $_field_data[$key]['class'] = 'is-invalid';
+            } else {
+                // No errors found so if there is posted data, add the valid class
+                $_field_data[$key]['class'] = (Input::exists()) ? 'is-valid' : '';
+            }
+            // Check for posted data if an account update has been attempted
+            if (Input::exists($key) && trim(Input::get($key)) !== false) {
+                // There is posted data so set that as the value
+                $_field_data[$key]['val'] = Input::get($key);
+            } else {
+                // There is no posted data so see if a record has been passed in
+                if (isset($_params['data'])) {
+                    // There is a record passed in so set that as the value
+                    $_field_data[$key]['val'] = $_params['data'][$key];
+                } else {
+                    // There is no record passed in so set the value as blank
+                    $_field_data[$key]['val'] = '';
+                }
+            } // if (Input::exists($value))
+        } // foreach($_form_fields)
+
+        $content = '';
+
+
+        $default_var = 'title';
+        $input_cus_num = Php2Html::label ([
+            'for' => ucfirst($default_var).'_input',
+            'content' => ucfirst(str_replace("_", " ", $default_var)),
+            'class' => 'mb-0',
+            'aria' => [
+                'described-by' => $default_var.'_help'
+            ],
+        ]);
+
+        $input_cus_num .= Php2Bs::bs_input_text ([
+            'id' => ucfirst($default_var).'_input',
+            'value' => $_field_data[$default_var]['val'],
+            'class' => $_field_data[$default_var]['class'],
+            'name' => $default_var,
+            'placeholder' => 'Add '.ucfirst(str_replace("_", " ", $default_var)) . '',
+            'aria' => [
+                'label' => 'Add '.ucfirst(str_replace("_", " ", $default_var)),
+            ],
+        ]); // Php2Bs::bs_input_text
+        if(isset($_form_fields[$default_var]['help_text'])) {
+            $input_cus_num .= Php2Bs::bs_form_text ([
+                'id' => $default_var.'_help',
+                'class' => 'text-muted',
+                'content' => $_form_fields[$default_var]['help_text']
+            ]);
+        }
+
+        $content .= Php2Bs::bs_form_group ([
+            'class' => '',
+            'content' => $input_cus_num
+        ]);
+
+
+
+        // Outline
+        $default_var = 'details';
+
+        $input = Php2Html::label ([
+            'for' => ucfirst($default_var).'_input',
+            'content' => ucfirst(str_replace("_", " ", $default_var)),
+            'class' => 'mb-0',
+            'aria' => [
+                'described-by' => $default_var.'_help'
+            ],
+        ]);
+        $input .= Php2Bs::bs_textarea ([
+            'class' => 'ckeditor',
+            'id' => ucfirst($default_var).'_input',
+            'name' => $default_var,
+            'rows' => 6,
+            'placeholder' => 'Add details of your \'One Thing\'',
+
+        ]); // Php2Bs::bs_input_text
+
+        if(isset($_form_fields[$default_var]['help_text'])) {
+            $input .= Php2Bs::bs_form_text ([
+                'id' => $default_var.'_help',
+                'class' => 'text-muted',
+                'content' => $_form_fields[$default_var]['help_text']
+            ]);
+        }
+
+        $content .= Php2Bs::bs_form_row ([
+            'content' => Php2Bs::bs_form_group ([
+                'class' => 'col-md-12',
+                'content' => $input
+            ])
+        ]); // Outline
+
+
+        $default_var = 'category';
+        $category_options = '';
+
+          foreach ($this->listingCats() as $key => $value) {
+              $category_options .= Php2Html::option ([
+                  'content' => ucwords(str_replace("_", " ", $value->category_name)),
+                  'value' => $value->id,
+                     'is_selected' => (isset($_field_data[$default_var]['val']) && $value->id == $_field_data[$default_var]['val']) ? true: false,
+              ]);
+          }
+
+          $category_options .= Php2Html::option ([
+              'content' => 'Other',
+              'value' => '-1',
+                 'is_selected' => (isset($_field_data[$default_var]['val']) && $value->id == $_field_data[$default_var]['val']) ? true: false,
+          ]);
+
+        $input = Php2Html::label ([
+            'for' => ucfirst($default_var).'_input',
+            'content' => ucfirst(str_replace("_", " ", $default_var)),
+            'class' => 'mb-0',
+            'aria' => [
+                'described-by' => $default_var.'_help'
+            ],
+        ]);
+        $input .= Php2Bs::bs_select ([
+               'class' => $_field_data[$default_var]['class'],
+               'content' =>$category_options,
+               'id' => ucfirst($default_var).'_input',
+               'name' => $default_var,
+               'aria' => [
+                   'label' => ucfirst(str_replace("_", " ", $default_var)),
+               ],
+           ]);
+        if(isset($_form_fields[$default_var]['help_text'])) {
+            $input .= Php2Bs::bs_form_text ([
+                'id' => $default_var.'_help',
+                'class' => 'text-muted',
+                'content' => $_form_fields[$default_var]['help_text']
+            ]);
+        }
+        $content .= Php2Bs::bs_form_group ([
+            'class' => '',
+            'content' => $input
+        ]);
+
+
+       // Add the button form group
+       $content .= Php2Bs::bs_form_row ([
+           'content' =>
+           Php2Bs::bs_form_group ([
+               'class' => 'col-12',
+               'content' => Php2Bs::bs_button ([
+                   'button_type' => 'submit',
+                   'class' => 'float-right',
+                   'color' => 'primary',
+                   //'size' => 'sm',
+                   'content' =>  'Submit',
+                   'name' => 'add_idea'
+               ]) // Php2Bs::bs_button
+           ]) // Php2Bs::bs_form_group
+       ]); // Button row
+
+       // Return the form
+       return Php2Html::form([
+           'id' => '',
+           'action' => '',
+           'method' => 'post',
+           'class' => '',
+           'content' => $content
+       ]); //  Php2Html::form
+   }
+
+   /**
+    * Get the total most recent record
+    *
+    * @return int 	    Count of rows
+    */
+   public function mostRecent() {
+       // Select all records from the database
+       $_qry  =  $this->db()->query('SELECT * FROM '.$this->_db_table .' ORDER BY `created_date` DESC LIMIT 1');
+
+       // Return a count of the records returned
+       return $_qry->first();
+   } // mostRecent()
+
+
+   public function ragStatusList () {
+       return [
+           'g' => 'green',
+           'a' => 'amber',
+           'r' => 'red',
+
+       ];
+   }
+
+   public function priorityList () {
+       return [
+           'l' => 'low',
+           'm' => 'medium',
+           'h' => 'high',
+           'u' => 'urgent',
+       ];
+   }
+
+
+
+
+    /**
+         * Return a list of Records
+         *
+         * @return array  List of Records
+         */
+    public function listing($start_date=null, $end_date=null) {
+
+        if (!$start_date) {
+            // Select all records from the database
+            $list = self::db()->query('SELECT
+            *
+            FROM `' . $this->_db_table . '` ORDER BY `created_date` DESC'
+            );
+        } else {
+            if (!$end_date) {
+                // Select all records from the database
+                $list = self::db()->query('SELECT
+                *
+                FROM `' . $this->_db_table . '` WHERE date(`created_date`) = ?',
+                [$start_date]
+                );
+            } else {
+                // Select all records from the database
+                $list = self::db()->query('SELECT
+                *
+                FROM `' . $this->_db_table . '` WHERE date(`created_date`) BETWEEN ? and ?',
+                [$start_date, $end_date]
+                );
+            }
+
+        }
+
+
+        // Return the results as an array
+        return $list->results();
+    } // listing()
+    public function findCats($_record=null) {
+
+        // We only run this if a record has been passed in so check for it
+        if ($_record)
+        {
+            /*
+                A record has been passed in so we now need to check what parameter has
+                been used to determine which field we are going to check it against in the table.
+
+                For Users, the $_record will either be the id or the username so we do not have
+                to manipulate it at all. There will be some occasions where we have to tweak
+                $_record to suit what is stored in the database compared to what we can use in a url. Ideally in these situations, we would use a slug.
+
+                If $_record is a number, we will assume it is the id field as usernames must start with a letter, otherwise it must be the username.
+
+             */
+            if(is_numeric($_record) && (int) $_record == $_record)
+            {
+                // $_record is numeric so we need to look up the id field
+                $_field = 'id';
+            } else
+            {
+                // $_record is not numeric so we need to look up the username or email field depending on the data posted
+                $_field = 'title';
+            }
+
+            // Search the table for the passed in $_record and correct $_field
+            $data = $this->db()->get('idea_categories', array($_field, '=', $_record));
+
+            // If the query returns any rows, set the data to $this->_data and return true
+            if ($data->count()) {
+                $this->_data = $data->first();
+                return true;
+            }
+        }
+        return false;
+    } // find()
+
+
+    public function listingComments($_record) {
+
+
+            // Select all records from the database
+            $list = self::db()->query('SELECT
+            *
+            FROM `idea_comments` WHERE `idea` = ?', [$_record]
+            );
+
+
+        // Return the results as an array
+        return $list->results();
+    } // listing()
+
+
+
+    public function listingCats() {
+
+
+            // Select all records from the database
+            $list = self::db()->query('SELECT
+            *
+            FROM `idea_categories`'
+            );
+
+
+        // Return the results as an array
+        return $list->results();
+    } // listing()
+
+    public function listingcount($start_date=null, $end_date=null) {
+
+        if (!$start_date) {
+            // Select all records from the database
+            $list = self::db()->query('SELECT
+            *
+            FROM `' . $this->_db_table . '`'
+            );
+        } else {
+            if (!$end_date) {
+                // Select all records from the database
+                $list = self::db()->query('SELECT
+                *
+                FROM `' . $this->_db_table . '` WHERE date(`created_date`) = ?',
+                [$start_date]
+                );
+            } else {
+                // Select all records from the database
+                $list = self::db()->query('SELECT
+                *
+                FROM `' . $this->_db_table . '` WHERE date(`created_date`) BETWEEN ? and ?',
+                [$start_date, $end_date]
+                );
+            }
+
+        }
+
+
+        // Return the results as an array
+        return $list->count();
+    } // listing()
+
+
+
+    public function messages ($msg=null) {
+        $array = [
+            'idea_approved' => [
+                'title' => 'The Idea has been approved',
+                'content' => 'This can now be seen by everyone. ',
+                'alert_color' => 'success',
+            ],
+            'all_comments_approved' => [
+                'title' => 'All pending comments approved',
+                'content' => 'All of the prending comments for this idea have been approved and can now be seen by everyone. ',
+                'alert_color' => 'success',
+            ],
+            'nothing_pending' => [
+                'title' => 'There are no pending items to show',
+                'alert_color' => 'info',
+            ],
+
+            'single_comment_approved' => [
+                'title' => 'Comment approved',
+                'content' => 'The comment has been approved and can now be seen by everyone. ',
+                'alert_color' => 'success',
+            ],
+            'not_found' => [
+                'title' => 'Idea not found',
+                'content' => 'Please select one from the list! ',
+                'alert_color' => 'danger',
+                'dismissible' => false
+            ],
+            'unathorised' => [
+                'title' => 'Unauthorised',
+                'content' => 'You do not have permission to view this page! ',
+                'alert_color' => 'warning',
+                'dismissible' => false
+            ],
+            'empty' => [
+                'title' => 'Nothing posted',
+                'content' => 'You have to enter something in the box! ',
+                'alert_color' => 'danger',
+            ],
+
+            'idea_empty' => [
+                'title' => 'Idea not submitted',
+                'content' => 'All fields must be filled in! ',
+                'alert_color' => 'danger',
+            ],
+
+            'comment_empty' => [
+                'title' => 'Comment not submitted',
+                'content' => 'The comment box must be filled in! ',
+                'alert_color' => 'danger',
+            ],
+            'not_logged_in' => [
+                'title' => 'Unauthorised',
+                'content' => 'You must be logged in to view this page ',
+                'alert_color' => 'danger',
+                'dismissible' => false
+            ],
+            'comment_success' => [
+                'title' => 'Your comment has been added',
+                'content' => 'Thank you for submitting your comment. It is waiting approval and will appear soon.',
+                'alert_color' => 'success',
+            ],
+            'success' => [
+                'title' => 'Your Idea has been added',
+                'content' => 'Thank you for submitting your \'Idea\'. It is waiting approval and will appear soon.',
+                'alert_color' => 'success',
+            ],
+
+            'marked' => [
+                'title' => 'The One Thing has been marked as viewed',
+                'content' => '',
+                'alert_color' => 'success',
+            ],
+
+        ];
+
+        if($msg) {
+            return $array[$msg];
+        } else {
+            return $array;
+        }
+    }
+
+
+    /**
+     * [update description]
+     * @param  [type] $record    [description]
+     * @param  [type] $_postdata [description]
+     * @return [type]            [description]
+     */
+    public function update($record, $_postdata) {
+        if (!self::db()->update($this->_db_table, $record, $_postdata))
+        {
+            // The update was unsuccesful
+            throw new Exception('There was a problem updating the account!');
+            // Flash a generic error message
+            $this->crudFlash ('generic_error');
+
+            return false;
+        }
+
+        return true;
+    }
+
+    public function approve_all_comments($record) {
+        if (!self::db()->query('UPDATE `idea_comments` SET `status` = ? WHERE `idea` = ? AND `status` = ?', ['o', $record, 'p']))
+        {
+            // The update was unsuccesful
+            throw new Exception('There was a problem updating the account!');
+            // Flash a generic error message
+            $this->crudFlash ('generic_error');
+
+            return false;
+        }
+
+        return true;
+    }
+
+    public function approve_single_comment($record) {
+        if (!self::db()->update('idea_comments', $record, ['status'=>'o']))
+        {
+            // The update was unsuccesful
+            throw new Exception('There was a problem updating the account!');
+            // Flash a generic error message
+            $this->crudFlash ('generic_error');
+
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Set the validation rules
+     *
+     * Sets the rules for any form fields the class uses when being
+     * processed.
+     *
+     * See the core/Validate.php class for information how these work.
+     *
+     * @return array Validation rules
+     */
+    public function validation_rules() {
+        return[
+            'outline' => [
+                'required' => true,
+            ],
+        ];
+    }
+
+    public function pending_idea_form() {
+        /**
+         * Set the output variable
+         *
+         * The final output will be built as a variable called
+         * $text so create it ready to add to
+         *
+         * @var null
+         */
+        $text = '';
+
+        $content = '';
+
+        $content .= Php2Html::button ([
+            'button_type' => 'submit',
+            'class' => 'btn btn-link p-0 pb-1',
+            'content' => 'Approve',
+            'name' => 'approve_idea'
+        ]);
+
+        $text .= Php2Html::form([
+            'id' => '',
+            'action' => '',
+            'method' => 'post',
+            'class' => ' d-inline mb-2',
+            'content' => $content
+        ]);
+
+        // Return the output
+        return $text;
+    } // loginForm()
+
+    public function pending_comments_form() {
+        /**
+         * Set the output variable
+         *
+         * The final output will be built as a variable called
+         * $text so create it ready to add to
+         *
+         * @var null
+         */
+        $text = '';
+
+        $content = '';
+
+        $content .= Php2Html::button ([
+            'button_type' => 'submit',
+            'class' => 'btn btn-link p-0 pb-1',
+            'content' => 'Approve',
+            'name' => 'approve_all_comments'
+        ]);
+
+        $text .= Php2Html::form([
+            'id' => '',
+            'action' => '',
+            'method' => 'post',
+            'class' => ' d-inline mb-2',
+            'content' => $content
+        ]);
+
+        // Return the output
+        return $text;
+    } // loginForm()
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<?php
+
+/**
+ *  Users Model
+ *
+ *  Contains the standard functions for data
+ *  manipulation, as well as the CRUD forms and displays.
+ *
+ *  Note that Users have a lot more functionality than mosts sections so there is a lot more to this one than most
+ *  models will contain.
+ *
+ *  @package Core
+ *  @author  Steve Ball <steve@follyball.co.uk>
+ *  @copyright Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
+ */
+
+// Include the initiation file
+require_once 'src/init.php';
+
+class M_Calls
+{
+    private
+        $_data,
+        $_db_table = 'call_log',
+        $_field,
+        $_field_data,
+        $_form_data,
+        $_form_fields,
+        $_params,
+        $_record,
+        $_qry;
+
+    public $_insertId;
+
+    /**
+     * Construct the database connection
+     *
+     *	Opens up a connection to the database and assigns it to
+     *	$this->_pdo to make it re-usable.
+     *
+     * The connection parameters are called using Globals on values held
+     * in /app/core/config_files/db.php
+     *
+     * @return 	Database connection
+     */
+    public function __construct()
+    {
+        $this->_logs = new Logs();
+
+    } //__construct ()
+
+    /**
+     * Connect to the database
+     *
+     * Returns an instance of the database connection to be used
+     * within the class. This is set as a function as it also needs
+     * to be accessed by the model.
+     *
+     * @return  Database connection
+     */
+    protected function db() {
+        return  DB::dbConnect();
+    } // db()
+
+    /**
+     * Get the total number of records
+     *
+     * @return int 	    Count of rows
+     */
+    public function count() {
+        // Select all records from the database
+        $_qry  =  $this->db()->query('SELECT * FROM '.$this->_db_table);
+
+        // Return a count of the records returned
+        return $_qry->count();
+    } // count()
+
+    /**
+	 * Create a new record
+	 *
+	 * Collects post data, validates it and inserts it into the database
+	 *
+	 */
+	public function create ($_params=[]) {
+        $_params['created_by'] = Session::get('uid');
+        $_params['created_date'] = date('Y-m-d H:i:s');
+        nicePrint_r($_SESSION);
+        if (!self::db()->insert($this->_db_table, $_params)){
+            # maybe Redirect::to('404');
+			// The insert was unsuccesful
+			if (Settings::site_details('debug_mode')) {
+                throw new Exception();
+            } else {
+                echo 'Issue with M_Faults->create()';
+            }
+
+			return false;
+		}
+        $this->_insertId = $this->db()->insertId();
+        return true;
+
+	} // create()
+
+
+    /**
+     * Return a records data
+     *
+     * Returns the private $this->_data details
+     * array in a public function
+     *
+     * @return array 	Record data
+     *
+    **/
+    public function data() {
+        return $this->_data;
+    } // data()
+
+    /**
+         * Delete a record
+         *
+         *  Deletes the specified record from $this->crud_table()->name
+         *
+         * @param  int  $record  Record ID
+         */
+	public function delete ($record) {
+		// We do not have to unset, add or amend anything so purely run the delete
+			if(!self::db()->delete($this->_db_table, array('id', '=', $record)))
+			{
+				// The update was unsuccesful
+				throw new Exception('There was a problem updating the account!');
+				// Flash a generic error message
+				$this->crudFlash ('generic_error');
+
+				return false;
+			}
+
+            return true;
+
+	} // delete()
+
+
+    /**
+     *  Check if a record exists
+     *
+     *	Checks to see if $this->data() exists following a find()
+     *
+     **/
+    public function exists() {
+      return ($this->data()) ? true : false;
+    } // exists()
+
+    /**
+     * Find a record
+     *
+     * Finds a record and assigns it's details from the $this->_db_table
+     * table to $this->_data. This can then be accessed from other files
+     * using data().
+     *
+     *
+     * @param  string/email/int 	$group  	Group identifier
+     * @return Boolean/Array
+     */
+    public function find($_record=null) {
+
+        // We only run this if a record has been passed in so check for it
+        if ($_record)
+        {
+            /*
+                A record has been passed in so we now need to check what parameter has
+                been used to determine which field we are going to check it against in the table.
+
+                For Users, the $_record will either be the id or the username so we do not have
+                to manipulate it at all. There will be some occasions where we have to tweak
+                $_record to suit what is stored in the database compared to what we can use in a url. Ideally in these situations, we would use a slug.
+
+                If $_record is a number, we will assume it is the id field as usernames must start with a letter, otherwise it must be the username.
+
+             */
+            if(is_numeric($_record) && (int) $_record == $_record)
+            {
+                // $_record is numeric so we need to look up the id field
+                $_field = 'id';
+            } else
+            {
+                // $_record is not numeric so we need to look up the username or email field depending on the data posted
+                $_field = 'title';
+            }
+
+            // Search the table for the passed in $_record and correct $_field
+            $data = self::db()->get($this->_db_table, array($_field, '=', $_record));
+
+            // If the query returns any rows, set the data to $this->_data and return true
+            if ($data->count()) {
+                $this->_data = $data->first();
+                return true;
+            }
+        }
+        return false;
+    } // find()
+
+    public function form ($_params) {
+        $_field_data = [];
+
+        $_form_fields = [
+            'outline' => [
+                'help_text' => 'Clear and descriptive outline of the call reason.'
+            ],
+            'status' => [
+                'help_text' => 'Add status help text........'
+            ],
+            'product' => [
+                'help_text' => 'Add rag help text........'
+            ],
+            'customer_number' => [
+                'help_text' => 'Add priority help text........'
+            ],
+            'policy_number' => [
+                'help_text' => 'Add product help text........'
+            ],
+            'agent' => [
+                'help_text' => 'Add system help text........'
+            ],
+            'outcome' => [
+                'help_text' => 'Add ref help text........'
+            ],
+        ];
+
+        if($_params['version'] == 'create') {
+           $_button_text = 'Add';
+           $_button_name = 'add_call';
+       } else {
+           $_button_text = 'Update';
+           $_button_name = 'update_call';
+       }
+
+       foreach ($_form_fields as $key => $value) {
+            // Check for errors
+            if (isset($_params['errors'][$key])) {
+                // Errors found for the field so add invalid class
+                $_field_data[$key]['class'] = 'is-invalid';
+            } else {
+                // No errors found so if there is posted data, add the valid class
+                $_field_data[$key]['class'] = (Input::exists()) ? 'is-valid' : '';
+            }
+            // Check for posted data if an account update has been attempted
+            if (Input::exists($key) && trim(Input::get($key)) !== false) {
+                // There is posted data so set that as the value
+                $_field_data[$key]['val'] = Input::get($key);
+            } else {
+                // There is no posted data so see if a record has been passed in
+                if (isset($_params['data'])) {
+                    // There is a record passed in so set that as the value
+                    $_field_data[$key]['val'] = $_params['data'][$key];
+                } else {
+                    // There is no record passed in so set the value as blank
+                    $_field_data[$key]['val'] = '';
+                }
+            } // if (Input::exists($value))
+        } // foreach($_form_fields)
+
+        $content = '';
+
+        // Outline
+        $default_var = 'outline';
+        $input = Php2Html::label ([
+            'for' => ucfirst($default_var).'_input',
+            'content' => ucfirst(str_replace("_", " ", $default_var)),
+            'class' => 'mb-0',
+            'aria' => [
+                'described-by' => $default_var.'_help'
+            ],
+        ]);
+        $input .= Php2Bs::bs_textarea ([
+            'class' => $_field_data[$default_var]['class'],
+            'id' => ucfirst($default_var).'_input',
+            'content' => $_field_data[$default_var]['val'],
+            'name' => $default_var,
+            'rows' => 6,
+            'placeholder' => 'Add '.ucfirst(str_replace("_", " ", $default_var)),
+            'aria' => [
+                'label' => 'Add '.ucfirst(str_replace("_", " ", $default_var)),
+            ],
+        ]); // Php2Bs::bs_input_text
+        if(isset($_form_fields[$default_var]['help_text'])) {
+            $input .= Php2Bs::bs_form_text ([
+                'id' => $default_var.'_help',
+                'class' => 'text-muted',
+                'content' => $_form_fields[$default_var]['help_text']
+            ]);
+        }
+        $content .= Php2Bs::bs_form_row ([
+            'content' => Php2Bs::bs_form_group ([
+                'class' => 'col-md-12',
+                'content' => $input
+            ])
+        ]); // Outline
+
+
+
+        // Status and Product
+        # Status
+        $default_var = 'status';
+        $system_options = '';
+
+          foreach (['o'=>'Open', 'c'=>'Closed'] as $key => $value) {
+              $system_options .= Php2Html::option ([
+                  'content' => ucwords(str_replace("_", " ", $value)),
+                  'value' => $key,
+                   'is_selected' => (isset($_field_data[$default_var]['val']) && $key == $_field_data[$default_var]['val']) ? true: false,
+              ]);
+          }
+
+        $input = Php2Html::label ([
+            'for' => ucfirst($default_var).'_input',
+            'content' => ucfirst(str_replace("_", " ", $default_var)),
+            'class' => 'mb-0',
+            'aria' => [
+                'described-by' => $default_var.'_help'
+            ],
+        ]);
+        $input .= Php2Bs::bs_select ([
+               'class' => $_field_data[$default_var]['class'],
+               'content' =>$system_options,
+               'id' => ucfirst($default_var).'_input',
+               'name' => $default_var,
+               'aria' => [
+                   'label' => ucfirst(str_replace("_", " ", $default_var)),
+               ],
+           ]);
+        if(isset($_form_fields[$default_var]['help_text'])) {
+            $input .= Php2Bs::bs_form_text ([
+                'id' => $default_var.'_help',
+                'class' => 'text-muted',
+                'content' => $_form_fields[$default_var]['help_text']
+            ]);
+        }
+        $rag_input = Php2Bs::bs_form_group ([
+            'class' => 'col-6',
+            'content' => $input
+        ]);
+
+        # Product
+       $products = new M_Products();
+
+       $default_var = 'product';
+       $product_options = '';
+       if($_params['version'] == 'create') {
+             $product_options .= Php2Html::option ([
+                 'content' => 'N/A',
+                 'value' => '',
+                 'is_selected' => false
+             ]);
+         }
+         foreach ($products->listing() as $key => $value) {
+             $product_options .= Php2Html::option ([
+                 'content' => ucwords(str_replace("_", " ", $value->product_name)),
+                 'value' => $value->id,
+                    'is_selected' => (isset($_field_data[$default_var]['val']) && $value->id == $_field_data[$default_var]['val']) ? true: false,
+             ]);
+         }
+
+       $input = Php2Html::label ([
+           'for' => ucfirst($default_var).'_input',
+           'content' => ucfirst(str_replace("_", " ", $default_var)),
+           'class' => 'mb-0',
+           'aria' => [
+               'described-by' => $default_var.'_help'
+           ],
+       ]);
+       $input .= Php2Bs::bs_select ([
+              'class' => $_field_data[$default_var]['class'],
+              'content' =>$product_options,
+              'id' => ucfirst($default_var).'_input',
+              'name' => $default_var,
+              'aria' => [
+                  'label' => ucfirst(str_replace("_", " ", $default_var)),
+              ],
+          ]);
+       if(isset($_form_fields[$default_var]['help_text'])) {
+           $input .= Php2Bs::bs_form_text ([
+               'id' => $default_var.'_help',
+               'class' => 'text-muted',
+               'content' => $_form_fields[$default_var]['help_text']
+           ]);
+       }
+       $priority_input = Php2Bs::bs_form_group ([
+           'class' => 'col-6',
+           'content' => $input
+       ]);
+
+        $content .= Php2Bs::bs_form_row ([
+            'content' => $rag_input.$priority_input
+        ]);// Status and Product
+
+
+
+        // Numbers
+        $default_var = 'customer_number';
+        $input_cus_num = Php2Html::label ([
+            'for' => ucfirst($default_var).'_input',
+            'content' => ucfirst(str_replace("_", " ", $default_var)),
+            'class' => 'mb-0',
+            'aria' => [
+                'described-by' => $default_var.'_help'
+            ],
+        ]);
+
+        $input_cus_num .= Php2Bs::bs_input_text ([
+            'id' => ucfirst($default_var).'_input',
+            'value' => $_field_data[$default_var]['val'],
+            'class' => $_field_data[$default_var]['class'],
+            'name' => $default_var,
+            'placeholder' => 'Add '.ucfirst(str_replace("_", " ", $default_var)) . ' name',
+            'aria' => [
+                'label' => 'Add '.ucfirst(str_replace("_", " ", $default_var)),
+            ],
+        ]); // Php2Bs::bs_input_text
+        if(isset($_form_fields[$default_var]['help_text'])) {
+            $input_cus_num .= Php2Bs::bs_form_text ([
+                'id' => $default_var.'_help',
+                'class' => 'text-muted',
+                'content' => $_form_fields[$default_var]['help_text']
+            ]);
+        }
+
+        $input_cus_num = Php2Bs::bs_form_group ([
+            'class' => 'col-6',
+            'content' => $input_cus_num
+        ]);
+
+
+        $default_var = 'policy_number';
+        $input_pol_num = Php2Html::label ([
+            'for' => ucfirst($default_var).'_input',
+            'content' => ucfirst(str_replace("_", " ", $default_var)),
+            'class' => 'mb-0',
+            'aria' => [
+                'described-by' => $default_var.'_help'
+            ],
+        ]);
+
+        $input_pol_num .= Php2Bs::bs_input_text ([
+            'id' => ucfirst($default_var).'_input',
+            'value' => $_field_data[$default_var]['val'],
+            'class' => $_field_data[$default_var]['class'],
+            'name' => $default_var,
+            'placeholder' => 'Add '.ucfirst(str_replace("_", " ", $default_var)) . ' name',
+            'aria' => [
+                'label' => 'Add '.ucfirst(str_replace("_", " ", $default_var)),
+            ],
+        ]); // Php2Bs::bs_input_text
+        if(isset($_form_fields[$default_var]['help_text'])) {
+            $input_pol_num .= Php2Bs::bs_form_text ([
+                'id' => $default_var.'_help',
+                'class' => 'text-muted',
+                'content' => $_form_fields[$default_var]['help_text']
+            ]);
+        }
+
+        $input_pol_num = Php2Bs::bs_form_group ([
+            'class' => 'col-6',
+            'content' => $input_pol_num
+        ]);
+
+
+        $content .= Php2Bs::bs_form_row ([
+            'content' => $input_cus_num.$input_pol_num
+        ]); // Numbers
+
+
+
+        // Agent Name
+        $default_var = 'agent';
+        $input = Php2Html::label ([
+            'for' => ucfirst($default_var).'_input',
+            'content' => ucfirst(str_replace("_", " ", $default_var)) . ' Name',
+            'class' => 'mb-0',
+            'aria' => [
+                'described-by' => $default_var.'_help'
+            ],
+        ]);
+
+        $input .= Php2Bs::bs_input_text ([
+            'id' => ucfirst($default_var).'_input',
+            'value' => $_field_data[$default_var]['val'],
+            'class' => $_field_data[$default_var]['class'],
+            'name' => $default_var,
+            'placeholder' => 'Add '.ucfirst(str_replace("_", " ", $default_var)) . ' name',
+            'aria' => [
+                'label' => 'Add '.ucfirst(str_replace("_", " ", $default_var)),
+            ],
+        ]); // Php2Bs::bs_input_text
+        if(isset($_form_fields[$default_var]['help_text'])) {
+            $input .= Php2Bs::bs_form_text ([
+                'id' => $default_var.'_help',
+                'class' => 'text-muted',
+                'content' => $_form_fields[$default_var]['help_text']
+            ]);
+        }
+
+        $input_title = Php2Bs::bs_form_group ([
+            'class' => 'col-12',
+            'content' => $input
+        ]);
+
+
+        $content .= Php2Bs::bs_form_row ([
+            'content' => $input_title
+        ]); // Ref and Title
+
+
+        // Outcome
+        $default_var = 'outcome';
+        $input = Php2Html::label ([
+            'for' => ucfirst($default_var).'_input',
+            'content' => ucfirst(str_replace("_", " ", $default_var)),
+            'class' => 'mb-0',
+            'aria' => [
+                'described-by' => $default_var.'_help'
+            ],
+        ]);
+        $input .= Php2Bs::bs_textarea ([
+            'class' => $_field_data[$default_var]['class'],
+            'id' => ucfirst($default_var).'_input',
+            'content' => $_field_data[$default_var]['val'],
+            'name' => $default_var,
+            'rows' => 6,
+            'placeholder' => 'Add '.ucfirst(str_replace("_", " ", $default_var)),
+            'aria' => [
+                'label' => 'Add '.ucfirst(str_replace("_", " ", $default_var)),
+            ],
+        ]); // Php2Bs::bs_input_text
+        if(isset($_form_fields[$default_var]['help_text'])) {
+            $input .= Php2Bs::bs_form_text ([
+                'id' => $default_var.'_help',
+                'class' => 'text-muted',
+                'content' => $_form_fields[$default_var]['help_text']
+            ]);
+        }
+        $content .= Php2Bs::bs_form_row ([
+            'content' => Php2Bs::bs_form_group ([
+                'class' => 'col-md-12',
+                'content' => $input
+            ])
+        ]); // Outcome
+
+
+
+
+       // Add the button form group
+       $content .= Php2Bs::bs_form_row ([
+           'content' =>
+           Php2Bs::bs_form_group ([
+               'class' => 'col-12',
+               'content' => Php2Bs::bs_button ([
+                   'button_type' => 'submit',
+                   'class' => 'float-right',
+                   'color' => 'primary',
+                   //'size' => 'sm',
+                   'content' =>  $_button_text,
+                   'name' => $_button_name
+               ]) // Php2Bs::bs_button
+           ]) // Php2Bs::bs_form_group
+       ]); // Button row
+
+       // Return the form
+       return Php2Html::form([
+           'id' => '',
+           'action' => '',
+           'method' => 'post',
+           'class' => '',
+           'content' => $content
+       ]); //  Php2Html::form
+   }
+
+   /**
+    * Get the total most recent record
+    *
+    * @return int 	    Count of rows
+    */
+   public function mostRecent() {
+       // Select all records from the database
+       $_qry  =  $this->db()->query('SELECT * FROM '.$this->_db_table .' ORDER BY `created_date` DESC LIMIT 1');
+
+       // Return a count of the records returned
+       return $_qry->first();
+   } // mostRecent()
+
+
+   public function ragStatusList () {
+       return [
+           'g' => 'green',
+           'a' => 'amber',
+           'r' => 'red',
+
+       ];
+   }
+
+   public function priorityList () {
+       return [
+           'l' => 'low',
+           'm' => 'medium',
+           'h' => 'high',
+           'u' => 'urgent',
+       ];
+   }
+
+
+
+
+    /**
+         * Return a list of Records
+         *
+         * @return array  List of Records
+         */
+    public function listing($start_date=null, $end_date=null) {
+
+        if (!$start_date) {
+            // Select all records from the database
+            $list = self::db()->query('SELECT
+            *
+            FROM `' . $this->_db_table . '`'
+            );
+        } else {
+            if (!$end_date) {
+                // Select all records from the database
+                $list = self::db()->query('SELECT
+                *
+                FROM `' . $this->_db_table . '` WHERE date(`created_date`) = ?',
+                [$start_date]
+                );
+            } else {
+                // Select all records from the database
+                $list = self::db()->query('SELECT
+                *
+                FROM `' . $this->_db_table . '` WHERE date(`created_date`) BETWEEN ? and ?',
+                [$start_date, $end_date]
+                );
+            }
+
+        }
+
+
+        // Return the results as an array
+        return $list->results();
+    } // listing()
+
+
+    public function listingcount($start_date=null, $end_date=null) {
+
+        if (!$start_date) {
+            // Select all records from the database
+            $list = self::db()->query('SELECT
+            *
+            FROM `' . $this->_db_table . '`'
+            );
+        } else {
+            if (!$end_date) {
+                // Select all records from the database
+                $list = self::db()->query('SELECT
+                *
+                FROM `' . $this->_db_table . '` WHERE date(`created_date`) = ?',
+                [$start_date]
+                );
+            } else {
+                // Select all records from the database
+                $list = self::db()->query('SELECT
+                *
+                FROM `' . $this->_db_table . '` WHERE date(`created_date`) BETWEEN ? and ?',
+                [$start_date, $end_date]
+                );
+            }
+
+        }
+
+
+        // Return the results as an array
+        return $list->count();
+    } // listing()
+
+
+
+    public function messages ($msg=null) {
+        $array = [
+            'admin_not_found' => [
+                'title' => 'Call not found',
+                'content' => 'The Call could not be found. '
+                . Php2Html::a(['content' => 'View List', 'href'=>'/Admin/Fault/Listing']),
+                'alert_color' => 'info',
+                'dismissible' => false,
+            ],
+            'not_found' => [
+                'title' => 'Call not found',
+                'content' => 'The Call could not be found. ',
+                'alert_color' => 'info',
+                'dismissible' => false,
+            ],
+
+            'create_success' => [
+                'title' => 'Call Created',
+                'alert_color' => 'success',
+                'content' => 'The Call has been created.',
+            ],
+
+            'create_fail' => [
+                'title' => 'Call Not Created',
+                'alert_color' => 'danger',
+                'content' => 'The Call was not created due to an unspecified error.',
+            ],
+
+            'not_logged_in' => [
+                'title' => 'Not logged in',
+                'alert_color' => 'danger',
+                'content' => 'You must be logged in to view this page.',
+                'dismissible' => false,
+            ],
+            'validation_failed' => [
+                'title' => 'Call not added',
+                'content' => 'Please correct the following errors...<br>{{errors}}',
+                'alert_color' => 'danger',
+            ],
+
+        ];
+
+        if($msg) {
+            return $array[$msg];
+        } else {
+            return $array;
+        }
+    }
+
+
+    /**
+     * [update description]
+     * @param  [type] $record    [description]
+     * @param  [type] $_postdata [description]
+     * @return [type]            [description]
+     */
+    public function update($record, $_postdata) {
+        if (!self::db()->update($this->_db_table, $record, $_postdata))
+        {
+            // The update was unsuccesful
+            throw new Exception('There was a problem updating the account!');
+            // Flash a generic error message
+            $this->crudFlash ('generic_error');
+
+            return false;
+        }
+
+        return true;
+    }
+
+
+
+    /**
+     * Set the validation rules
+     *
+     * Sets the rules for any form fields the class uses when being
+     * processed.
+     *
+     * See the core/Validate.php class for information how these work.
+     *
+     * @return array Validation rules
+     */
+    public function validation_rules() {
+        return[
+            'outline' => [
+                'required' => true,
+            ],
+        ];
+    }
+
+
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<?php
+
+/**
+ *  Users Model
+ *
+ *  Contains the standard functions for data
+ *  manipulation, as well as the CRUD forms and displays.
+ *
+ *  Note that Users have a lot more functionality than mosts sections so there is a lot more to this one than most
+ *  models will contain.
+ *
+ *  @package Core
+ *  @author  Steve Ball <steve@follyball.co.uk>
+ *  @copyright Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
+ */
+
+// Include the initiation file
+require_once 'src/init.php';
+
+class M_OneThing
+{
+    private
+        $_data,
+        $_db_table = 'one_thing',
+        $_field,
+        $_field_data,
+        $_form_data,
+        $_form_fields,
+        $_params,
+        $_record,
+        $_qry;
+
+    public $_insertId;
+
+    /**
+     * Construct the database connection
+     *
+     *	Opens up a connection to the database and assigns it to
+     *	$this->_pdo to make it re-usable.
+     *
+     * The connection parameters are called using Globals on values held
+     * in /app/core/config_files/db.php
+     *
+     * @return 	Database connection
+     */
+    public function __construct()
+    {
+        $this->_logs = new Logs();
+
+    } //__construct ()
+
+    /**
+     * Connect to the database
+     *
+     * Returns an instance of the database connection to be used
+     * within the class. This is set as a function as it also needs
+     * to be accessed by the model.
+     *
+     * @return  Database connection
+     */
+    protected function db() {
+        return  DB::dbConnect();
+    } // db()
+
+    /**
+     * Get the total number of records
+     *
+     * @return int 	    Count of rows
+     */
+    public function count() {
+        // Select all records from the database
+        $_qry  =  $this->db()->query('SELECT * FROM '.$this->_db_table);
+
+        // Return a count of the records returned
+        return $_qry->count();
+    } // count()
+
+    /**
+	 * Create a new record
+	 *
+	 * Collects post data, validates it and inserts it into the database
+	 *
+	 */
+	public function create ($_params=[]) {
+        $_params['created_date'] = date('Y-m-d H:i:s');
+        if (!self::db()->insert($this->_db_table, $_params)){
+            # maybe Redirect::to('404');
+			// The insert was unsuccesful
+			if (Settings::site_details('debug_mode')) {
+                throw new Exception();
+            } else {
+                echo 'Issue with M_Faults->create()';
+            }
+
+			return false;
+		}
+        $this->_insertId = $this->db()->insertId();
+        return true;
+
+	} // create()
+
+
+    /**
+     * Return a records data
+     *
+     * Returns the private $this->_data details
+     * array in a public function
+     *
+     * @return array 	Record data
+     *
+    **/
+    public function data() {
+        return $this->_data;
+    } // data()
+
+    /**
+         * Delete a record
+         *
+         *  Deletes the specified record from $this->crud_table()->name
+         *
+         * @param  int  $record  Record ID
+         */
+	public function delete ($record) {
+		// We do not have to unset, add or amend anything so purely run the delete
+			if(!self::db()->delete($this->_db_table, array('id', '=', $record)))
+			{
+				// The update was unsuccesful
+				throw new Exception('There was a problem updating the account!');
+				// Flash a generic error message
+				$this->crudFlash ('generic_error');
+
+				return false;
+			}
+
+            return true;
+
+	} // delete()
+
+
+    /**
+     *  Check if a record exists
+     *
+     *	Checks to see if $this->data() exists following a find()
+     *
+     **/
+    public function exists() {
+      return ($this->data()) ? true : false;
+    } // exists()
+
+    /**
+     * Find a record
+     *
+     * Finds a record and assigns it's details from the $this->_db_table
+     * table to $this->_data. This can then be accessed from other files
+     * using data().
+     *
+     *
+     * @param  string/email/int 	$group  	Group identifier
+     * @return Boolean/Array
+     */
+    public function find($_record=null) {
+
+        // We only run this if a record has been passed in so check for it
+        if ($_record)
+        {
+            /*
+                A record has been passed in so we now need to check what parameter has
+                been used to determine which field we are going to check it against in the table.
+
+                For Users, the $_record will either be the id or the username so we do not have
+                to manipulate it at all. There will be some occasions where we have to tweak
+                $_record to suit what is stored in the database compared to what we can use in a url. Ideally in these situations, we would use a slug.
+
+                If $_record is a number, we will assume it is the id field as usernames must start with a letter, otherwise it must be the username.
+
+             */
+            if(is_numeric($_record) && (int) $_record == $_record)
+            {
+                // $_record is numeric so we need to look up the id field
+                $_field = 'id';
+            } else
+            {
+                // $_record is not numeric so we need to look up the username or email field depending on the data posted
+                $_field = 'title';
+            }
+
+            // Search the table for the passed in $_record and correct $_field
+            $data = self::db()->get($this->_db_table, array($_field, '=', $_record));
+
+            // If the query returns any rows, set the data to $this->_data and return true
+            if ($data->count()) {
+                $this->_data = $data->first();
+                return true;
+            }
+        }
+        return false;
+    } // find()
+
+    public function form ($status) {
+        $_field_data = [];
+
+        $_form_fields = [
+            'details' => [
+                'help_text' => 'Clear and descriptive outline of the thing.'
+            ],
+
+        ];
+
+
+       foreach ($_form_fields as $key => $value) {
+            // Check for errors
+            if (isset($_params['errors'][$key])) {
+                // Errors found for the field so add invalid class
+                $_field_data[$key]['class'] = 'is-invalid';
+            } else {
+                // No errors found so if there is posted data, add the valid class
+                $_field_data[$key]['class'] = (Input::exists()) ? 'is-valid' : '';
+            }
+            // Check for posted data if an account update has been attempted
+            if (Input::exists($key) && trim(Input::get($key)) !== false) {
+                // There is posted data so set that as the value
+                $_field_data[$key]['val'] = Input::get($key);
+            } else {
+                // There is no posted data so see if a record has been passed in
+                if (isset($_params['data'])) {
+                    // There is a record passed in so set that as the value
+                    $_field_data[$key]['val'] = $_params['data'][$key];
+                } else {
+                    // There is no record passed in so set the value as blank
+                    $_field_data[$key]['val'] = '';
+                }
+            } // if (Input::exists($value))
+        } // foreach($_form_fields)
+
+        $content = '';
+
+        // Outline
+        $default_var = 'details';
+
+        $checkbox_row = Php2Bs::bs_form_group ([
+            'class' => 'col-md-6 mb-0',
+            'content' => Php2Html::div ([
+                'class' => 'form-check',
+                'content' => Php2Html::checkbox ([
+                    'id' => 'Public',
+                    'name' => 'public',
+                    'checked' => '',
+                    'class' => 'form-check-input',
+                ]) // checkbox
+                .Php2Html::label ([
+                    'for' => 'Public',
+                    'content' => 'Allow others to see this \'one thing\'',
+                    'class' => 'mb-0',
+                ]) // label
+            ]) // Php2Bs::bs_input_text
+        ]);
+
+        if($status) {
+            $checkbox_row .=Php2Bs::bs_form_group ([
+                'class' => 'col-md-6 mb-0',
+                'content' => Php2Html::div ([
+                    'class' => 'form-check',
+                    'content' => Php2Html::checkbox ([
+                        'id' => 'User',
+                        'name' => 'user',
+                        'class' => 'form-check-input',
+                    ]) // checkbox
+        			.Php2Html::label ([
+                        'for' => 'User',
+                        'content' => 'Add your name to your \'one thing\'',
+                        'class' => 'mb-0',
+                    ]) // label
+                ]) // Php2Bs::bs_input_text
+            ]);
+        }
+
+        $content .= Php2Bs::bs_form_row ([
+            'content' =>$checkbox_row
+        ]);
+
+        $content .= '<hr>'; // Php2Html::div.form-group
+
+        $input = Php2Bs::bs_textarea ([
+            'class' => 'ckeditor',
+            'id' => ucfirst($default_var).'_input',
+            'name' => $default_var,
+            'rows' => 6,
+            'placeholder' => 'Add details of your \'One Thing\'',
+
+        ]); // Php2Bs::bs_input_text
+
+        $content .= Php2Bs::bs_form_row ([
+            'content' => Php2Bs::bs_form_group ([
+                'class' => 'col-md-12',
+                'content' => $input
+            ])
+        ]); // Outline
+
+
+       // Add the button form group
+       $content .= Php2Bs::bs_form_row ([
+           'content' =>
+           Php2Bs::bs_form_group ([
+               'class' => 'col-12',
+               'content' => Php2Bs::bs_button ([
+                   'button_type' => 'submit',
+                   'class' => 'float-right',
+                   'color' => 'primary',
+                   //'size' => 'sm',
+                   'content' =>  'Submit',
+                   'name' => 'add_one_thing'
+               ]) // Php2Bs::bs_button
+           ]) // Php2Bs::bs_form_group
+       ]); // Button row
+
+       // Return the form
+       return Php2Html::form([
+           'id' => '',
+           'action' => '',
+           'method' => 'post',
+           'class' => '',
+           'content' => $content
+       ]); //  Php2Html::form
+   }
+
+   /**
+    * Get the total most recent record
+    *
+    * @return int 	    Count of rows
+    */
+   public function mostRecent() {
+       // Select all records from the database
+       $_qry  =  $this->db()->query('SELECT * FROM '.$this->_db_table .' ORDER BY `created_date` DESC LIMIT 1');
+
+       // Return a count of the records returned
+       return $_qry->first();
+   } // mostRecent()
+
+
+   public function ragStatusList () {
+       return [
+           'g' => 'green',
+           'a' => 'amber',
+           'r' => 'red',
+
+       ];
+   }
+
+   public function priorityList () {
+       return [
+           'l' => 'low',
+           'm' => 'medium',
+           'h' => 'high',
+           'u' => 'urgent',
+       ];
+   }
+
+   public function listing($start_date=null, $end_date=null) {
+
+       if (!$start_date) {
+           // Select all records from the database
+           $list = self::db()->query('SELECT
+           *
+           FROM `' . $this->_db_table . '` WHERE `public` = ? AND `status` = ? ORDER BY `created_date` DESC',['1','1']
+           );
+       } else {
+           if (!$end_date) {
+               // Select all records from the database
+               $list = self::db()->query('SELECT
+               *
+               FROM `' . $this->_db_table . '` WHERE date(`created_date`) = ?',
+               [$start_date]
+               );
+           } else {
+               // Select all records from the database
+               $list = self::db()->query('SELECT
+               *
+               FROM `' . $this->_db_table . '` WHERE date(`created_date`) BETWEEN ? and ?',
+               [$start_date, $end_date]
+               );
+           }
+
+       }
+
+
+       // Return the results as an array
+       return $list->results();
+   } // listing()
+
+
+
+
+    /**
+         * Return a list of Records
+         *
+         * @return array  List of Records
+         */
+    public function adminlisting($start_date=null, $end_date=null) {
+
+        if (!$start_date) {
+            // Select all records from the database
+            $list = self::db()->query('SELECT
+            *
+            FROM `' . $this->_db_table . '` ORDER BY `created_date` DESC'
+            );
+        } else {
+            if (!$end_date) {
+                // Select all records from the database
+                $list = self::db()->query('SELECT
+                *
+                FROM `' . $this->_db_table . '` WHERE date(`created_date`) = ?',
+                [$start_date]
+                );
+            } else {
+                // Select all records from the database
+                $list = self::db()->query('SELECT
+                *
+                FROM `' . $this->_db_table . '` WHERE date(`created_date`) BETWEEN ? and ?',
+                [$start_date, $end_date]
+                );
+            }
+
+        }
+
+
+        // Return the results as an array
+        return $list->results();
+    } // listing()
+
+
+    public function listingcount($start_date=null, $end_date=null) {
+
+        if (!$start_date) {
+            // Select all records from the database
+            $list = self::db()->query('SELECT
+            *
+            FROM `' . $this->_db_table . '`'
+            );
+        } else {
+            if (!$end_date) {
+                // Select all records from the database
+                $list = self::db()->query('SELECT
+                *
+                FROM `' . $this->_db_table . '` WHERE date(`created_date`) = ?',
+                [$start_date]
+                );
+            } else {
+                // Select all records from the database
+                $list = self::db()->query('SELECT
+                *
+                FROM `' . $this->_db_table . '` WHERE date(`created_date`) BETWEEN ? and ?',
+                [$start_date, $end_date]
+                );
+            }
+
+        }
+
+
+        // Return the results as an array
+        return $list->count();
+    } // listing()
+
+
+
+    public function messages ($msg=null) {
+        $array = [
+            'empty' => [
+                'title' => 'Nothing posted',
+                'content' => 'You have to enter something in the box! ',
+                'alert_color' => 'danger',
+            ],
+            'unauthorised' => [
+                'title' => 'Unauthorised',
+                'content' => 'You do not have permission to view this page ',
+                'alert_color' => 'danger',
+                'dismissible' => false
+            ],
+            'success' => [
+                'title' => 'Your One Thing has been added',
+                'content' => 'Thank you for submitting your \'One Thing\'. If you have included your name, we will give feedback to you. If you have set it to be viewed by others, it will appear once approved.',
+                'alert_color' => 'success',
+            ],
+
+            'marked' => [
+                'title' => 'The One Thing has been marked as viewed',
+                'content' => '',
+                'alert_color' => 'success',
+            ],
+
+        ];
+
+        if($msg) {
+            return $array[$msg];
+        } else {
+            return $array;
+        }
+    }
+
+
+    /**
+     * [update description]
+     * @param  [type] $record    [description]
+     * @param  [type] $_postdata [description]
+     * @return [type]            [description]
+     */
+    public function update($record, $_postdata) {
+        if (!self::db()->update($this->_db_table, $record, $_postdata))
+        {
+            // The update was unsuccesful
+            throw new Exception('There was a problem updating the account!');
+            // Flash a generic error message
+            $this->crudFlash ('generic_error');
+
+            return false;
+        }
+
+        return true;
+    }
+
+
+
+    /**
+     * Set the validation rules
+     *
+     * Sets the rules for any form fields the class uses when being
+     * processed.
+     *
+     * See the core/Validate.php class for information how these work.
+     *
+     * @return array Validation rules
+     */
+    public function validation_rules() {
+        return[
+            'outline' => [
+                'required' => true,
+            ],
+        ];
+    }
+
+
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+views
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+views 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<?php
+
+/**
+ * Faults View
+ *
+ * There is full commenting on how the views are structured and
+ * all of the parameters that can be passed used in app/views/home/index.
+ *
+ * As a result, this file only comments or includes anything that is
+ * different from that file.
+ *
+ * @package 	Core
+ * @author  	Steve Ball <steve@follyball.co.uk>
+ * @copyright 	Copyright (c) 2018 Steve Ball <steve@follyball.co.uk>
+ * @example 	http://yoursite/Faults/
+ *
+ */
+
+
+//Set the parameters for the page
+$params['layout'] = 'right-col';
+$params['page_title'] = (isset($data['page_name'])) ? $data['page_name'] : null;
+$params['page_subtitle'] = (isset($data['page_subtitle'])) ? $data['page_subtitle'] : null;
+$params['meta'] = ['description' => 'Description set in page'];
+$params['js'] = [
+    'remote/ckeditor',
+    #'path/to/js2',
+    #'path/to/js3'
+];
+$params['sidebar'] = 'calls';
+$content = '';
+
+// Show any messages that have been sent ot the page as an alert
+$content .= showPageAlerts ($data);
+
+# Show the required data based on passed in page type
+
+if($data['page_type'] == 'view') {
+
+    $date = new DateTime($data['data']->created_date);
+    $user = new M_Users();
+    $user->find($data['data']->created_by);
+    $content .= Php2Html::p([
+            'content' => 'Taken by '. $user->data()->username . ' on ' .$date->format('l, jS F, Y \a\t g:ia'),
+            'class' => 'font-italic text-muted font-weight-bold'
+    ]);
+
+    $content .= Php2Html::p([
+        'content' => $data['data']->outline,
+    ]);
+
+    $status = ($data['data']->status == 'o') ? 'Open' : 'Closed' ;
+    $content .= Php2Html::p([
+        'content' => '<b>Status</b>:  '.$status,
+        'class' => 'py-3 border-bottom border-secondary'
+    ]);
+
+    if($data['data']->product) {
+        $product = new M_Products();
+
+        $product->find($data['data']->product);
+
+        $content .= Php2Html::p([
+            'content' => '<b>Product</b>:  '.$product->data()->product_name,
+            'class' => 'py-3 border-bottom border-secondary'
+        ]);
+
+    } else {
+        $content .= Php2Html::p([
+            'content' => '<b>Product</b>:  Not Specific',
+            'class' => 'py-3 border-bottom border-secondary'
+        ]);
+    }
+
+    if($data['data']->customer_number) {
+        $content .= Php2Html::p([
+            'content' => '<b>Customer Number</b>: '.$data['data']['customer_number'],
+            'class' => 'py-3 border-bottom border-secondary'
+        ]);
+    } else {
+        $content .= Php2Html::p([
+            'content' => '<b>Customer Number</b>: N/A',
+            'class' => 'py-3 border-bottom border-secondary'
+        ]);
+    }
+
+    if($data['data']->policy_number) {
+        $content .= Php2Html::p([
+            'content' => '<b>Policy Number</b>: '.$data['data']['policy_number'],
+            'class' => 'py-3 border-bottom border-secondary'
+        ]);
+    } else {
+        $content .= Php2Html::p([
+            'content' => '<b>Policy Number</b>: N/A',
+            'class' => 'py-3 border-bottom border-secondary'
+        ]);
+    }
+
+    if($data['data']->agent) {
+        $content .= Php2Html::p([
+            'content' => '<b>Agent</b>: '.$data['data']['agent'],
+            'class' => 'py-3 border-bottom border-secondary'
+        ]);
+    } else {
+        $content .= Php2Html::p([
+            'content' => '<b>Agent</b>: N/A',
+            'class' => 'py-3 border-bottom border-secondary'
+        ]);
+    }
+
+    if($data['data']->outcome) {
+        $content .= Php2Html::p([
+            'content' => '<b>Outcome</b>: '.$data['data']['outcome'],
+            'class' => 'py-3 border-bottom border-secondary'
+        ]);
+    } else {
+        $content .= Php2Html::p([
+            'content' => '<b>Outcome</b>: N/A',
+            'class' => 'py-3 border-bottom border-secondary'
+        ]);
+    }
+
+
+    if($data['data']->follow_up) {
+        $content .= Php2Html::p([
+            'content' => '<b>Follow Up</b>: '.$data['data']['follow_up'],
+            'class' => 'py-3 border-bottom border-secondary'
+        ]);
+    } else {
+        $content .= Php2Html::p([
+            'content' => '<b>Follow Up</b>: N/A',
+            'class' => 'py-3 border-bottom border-secondary'
+        ]);
+    }
+
+}
+
+if($data['page_type'] == 'add') {
+
+    $content .= $data['form'];
+}
+
+if($data['page_type'] == 'listing') {
+    $records = '';
+    $content .=  Php2Html::h([
+        'content' => $data['count'] . ' calls to show.',
+        'size' => '3'
+    ]);
+    foreach ($data['data'] as $key => $value) {
+        $date = new DateTime($value->created_date);
+
+        $details = Php2Html::p([
+            'class' => 'text-truncate',
+                'content' => $value->outline ,
+
+        ]);
+
+        $user = new M_Users();
+
+        $user->find($value->created_by);
+
+        $details .= Php2Html::p([
+                'content' => 'Logged by '. $user->data()->username . ' on ' .$date->format('l, jS F, Y \a\t g:ia')
+        ]);
+
+
+        if($value->product) {
+            $product = new M_Products();
+
+            $product->find($value->product);
+
+            $details .= Php2Html::span([
+                'content' => '<i class="fab fa-product-hunt"></i> '.$product->data()->product_name,
+                'class' => 'px-3 border-right border-secondary'
+            ]);
+
+        }
+
+        if($value->status == 'o') {
+            $text = 'Open';
+        } else {
+            $text = 'Closed';
+        }
+            $details .= Php2Html::span([
+                'content' => '<i class="fas fa-hourglass-half"></i> '.$text,
+                'class' => 'px-3 border-right border-secondary'
+            ]);
+
+
+        $details .= Php2Html::a([
+            'content' => ' View Now',
+            'href' => '/CallLog/Details/'.$value->id
+        ]);
+
+        $records .= Php2Bs::bs_column([
+            'content' => $details,
+            'class' => 'border-secondary border-bottom pb-1 mb-2'
+        ]);
+
+
+    }
+    $content .= Php2Bs::bs_card ([
+        'class' => 'border-primary bg-secondary mb-1',
+        'body' => [
+            'class' => 'bg-light',
+            'content' => $records
+        ],
+    ]);// bs_card
+}
+
+# TODO Better overview page
+if($data['page_type'] == 'overview') {
+
+
+    $latest_date = new DateTime($data['latest']->created_date);
+
+    $latest_details = Php2Html::p([
+            'content' => $data['latest']->outline .
+            Php2Html::a([
+                'content' => ' View Now',
+                'href' => '/Calls/Details/'.$data['latest']->id
+            ]),
+
+    ]);
+
+    $user = new M_Users();
+
+    $user->find($data['latest']->created_by);
+
+    $latest_details .= Php2Html::p([
+            'content' => 'Logged by '. $user->data()->username . ' on ' .$latest_date->format('l, jS F, Y \a\t g:ia')
+    ]);
+
+
+
+    $content .=  Php2Html::h([
+        'content' => 'There are currently ' . $data['count'] . ' calls stored.',
+        'size' => '3'
+    ]);
+
+    $content .=  Php2Html::p([
+        'content' => 'Today: ' . $data['today'] . ' / Yesterday: ' . $data['yesterday']
+    ]);
+
+    $content .=  Php2Html::p([
+        'content' => 'This week: ' . $data['this_week'] . ' / Last week: ' . $data['last_week']
+    ]);
+
+    $content .=  Php2Html::p([
+        'content' => 'This month: ' . $data['this_month'] . ' / Last month: ' . $data['last_month']
+    ]);
+
+    $content .=  Php2Html::p([
+        'content' => 'This year: ' . $data['this_year'] . ' / Last year: ' . $data['last_year']
+    ]);
+
+    $content .= Php2Bs::bs_card ([
+        'class' => 'border-primary bg-secondary mb-1',
+        'header' => [
+            'content' => 'Most Recent',
+            'class' => 'font-weight-bold text-light'
+        ],
+        'body' => [
+            'class' => 'bg-light',
+            'content' => $latest_details,
+        ],
+    ]);// bs_card
+
+} // $data->page_type == 'overview'
+
+
+// Pass the details to the template
+new T_Main ($content,$params);
+?>
+<script>
+    CKEDITOR.replace( 'outline',{toolbar:'Basic', uiColor : '#f3f3f3'} );
+    CKEDITOR.replace( 'outcome',{toolbar:'Basic', uiColor : '#f3f3f3'} );
+</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<?php
+
+/**
+ * Faults View
+ *
+ * There is full commenting on how the views are structured and
+ * all of the parameters that can be passed used in app/views/home/index.
+ *
+ * As a result, this file only comments or includes anything that is
+ * different from that file.
+ *
+ * @package 	Core
+ * @author  	Steve Ball <steve@follyball.co.uk>
+ * @copyright 	Copyright (c) 2018 Steve Ball <steve@follyball.co.uk>
+ * @example 	http://yoursite/Faults/
+ *
+ */
+
+//ini_set('display_errors', 1);
+//ini_set('display_startup_errors', 1);
+//error_reporting(E_ALL);
+
+//nicePrint_r($_POST);
+//nicePrint_r($data);
+$model = new M_Ideas();
+
+$params['layout'] = 'right-col';
+//Set the parameters for the page
+$params['page_title'] = (isset($data['page_name'])) ? $data['page_name'] : null;
+$params['page_subtitle'] = (isset($data['page_subtitle'])) ? $data['page_subtitle'] : null;
+$params['meta'] = ['description' => 'Description set in page'];
+$params['js'] = [
+    'remote/ckeditor',
+    #'path/to/js2',
+    #'path/to/js3'
+];
+$params['sidebar'] = 'ideas';
+$content = '';
+
+// Show any messages that have been sent ot the page as an alert
+$content .= showPageAlerts ($data);
+
+# Show the required data based on passed in page type
+
+
+
+# TODO Better overview page
+
+if($data['page_type'] == 'add') {
+
+    if(isset($data['form'])) {
+        $content .= Php2Bs::bs_card ([
+            'class' => 'border-primary bg-secondary mb-1',
+            'body' => [
+                'class' => 'bg-light',
+                'content' => $data['form'],
+            ],
+        ]);// bs_card
+    }
+
+
+}
+if($data['page_type'] == 'pending_comment') {
+    foreach ($data['list'] as $key => $value) {
+
+        $user = new M_Users();
+        $user->find($value->created_by);
+        $date = new DateTime($value->created_date);
+
+
+        if($value->status == 'p') {
+            $border = 'danger';
+            $card_info['header'] = [
+                'content' => $user->data()->username . ' on ' .$date->format('l, jS F, Y \a\t g:ia').Php2Html::form([
+                    'id' => '',
+                    'action' => '',
+                    'method' => 'post',
+                    'class' => ' d-inline mb-2',
+                    'content' => Php2Html::button ([
+                        'button_type' => 'submit',
+                        'class' => 'btn btn-sm btn-primary float-right',
+                        'content' => 'Approve',
+                        'name' => 'approve_single_comment',
+                        'value' => $value->id
+                    ])
+                ]),
+                'class' => 'p-1 bg-danger font-weight-bold text-light'
+            ];
+        } else {
+            $border = 'primary';
+            $card_info['header'] = null;
+        }
+
+        $card_info['class'] = 'border-'.$border.' bg-light mb-1 ';
+
+        $card_info['body'] = [
+            'content' => $value->details.'<hr>Replying to idea...<b><br>'.$value->idea_title . '</b> <br>' .$value->idea_details,
+            'class' => 'p-2',
+        ];
+
+        $content .= Php2Bs::bs_card ($card_info);// bs_card
+    }
+}
+
+if($data['page_type'] == 'pending_ideas') {
+
+        foreach ($data['list'] as $key => $value) {
+
+            $date = new DateTime($value->created_date);
+            $user = new M_Users();
+            $user->find($value->created_by);
+            if($value->category == '-1') {
+                $cat_name = 'Other';
+            } else {
+                $model->findCats($value->category);
+
+                $cat_name = $model->data()->category_name;
+            }
+
+            switch ($value->status) {
+                case 'o':
+                    $status = 'Open';
+                    break;
+                case 'c':
+                    $status = 'Closed';
+                    break;
+                case 'i':
+                    $status = 'In Progress';
+                    break;
+                case 'p':
+                    $status = 'Pending';
+                    break;
+                default:
+                    # code...
+                    break;
+            }
+
+
+            $show_category = Php2Html::i(['content' => '', 'class' => 'far fa-folder-open mr-2']).
+            Php2Html::span(['content' => $cat_name, 'class' => 'border-secondary border-right mr-2 pr-2']);
+
+            $show_status = Php2Html::i(['content' => '', 'class' => 'fas fa-battery-half mx-2']).
+            Php2Html::span(['content' => $status, 'class' => 'border-secondary border-right mr-2 pr-2']);
+
+            $show_comments = Php2Html::i(['content' => '', 'class' => 'fas fa-comments mx-2']).
+            Php2Html::span(['content' => count($model->listingComments($value->id))]);
+
+            $details_row = Php2Bs::bs_column ([
+                'content' => $value->details,
+                'class' => 'text-truncate',
+                'style' => 'height:20px;'
+            ]).
+            '<hr>'.
+            $show_category.
+            $show_status.
+            $show_comments.
+            Php2Html::a(['class'=>'float-right','content' => 'View', 'href'=>'/Ideas/Details/'.$value->id]);
+
+            if($value->status == 'p') {
+                $border = 'danger';
+                $footer = 'danger';
+            } else {
+                $border = 'primary';
+                $footer = 'secondary';
+            }
+
+            if($value->status !== 'p' || $data['is_admin']) {
+                $content .= Php2Bs::bs_card ([
+                    'class' => 'border-'.$border.' bg-light mb-1 ',
+                    'header' => array (
+                        'content' => Php2Html::a(['content' => $value->title.Php2Html::form([
+                            'id' => '',
+                            'action' => '',
+                            'method' => 'post',
+                            'class' => ' d-inline mb-2',
+                            'content' => Php2Html::button ([
+                                'button_type' => 'submit',
+                                'class' => 'btn btn-sm btn-primary float-right',
+                                'content' => 'Approve',
+                                'name' => 'approve_idea',
+                                'value' => $value->id
+                            ])
+                        ]), 'href'=>'/Ideas/Details/'.$value->id]),
+                        'class' => 'font-weight-bold'
+                    ),
+                    'body' => array (
+                        'content' => $details_row,
+                        'class' => 'p-2',
+                    ),
+                    'footer' => array (
+                        'content' => 'Posted by '. $user->data()->username . ' on ' .$date->format('l, jS F, Y \a\t g:ia'),
+                        'class' => 'font-italic font-weight-bold bg-'.$footer.' text-light p-2'
+                    ),
+                ]);// bs_card
+            }
+        }}
+
+if($data['page_type'] == 'pending_overview') {
+    if ($data['pending_ideas'] || $data['pending_comments']) {
+
+        $body = '';
+
+        if($data['pending_ideas']) {
+
+            $text = ($data['pending_ideas'] > 1) ? 'There are currently ' . $data['pending_ideas'] . ' ideas pending. ' :
+            'There is currently ' . $data['pending_ideas'] . ' idea pending. ';
+
+            $body .= Php2Html::p([
+                'content' => $text.Php2Html::a([
+                    'content' => 'View',
+                    'href' => '/Ideas/Pending/Idea'
+                ])
+            ]);
+        }
+
+        if($data['pending_comments']) {
+
+            $text = ($data['pending_comments'] > 1) ? 'There are currently ' . $data['pending_comments'] . ' comments pending. ' :
+            'There is currently ' . $data['pending_comments'] . ' comment pending. ';
+
+            $body .= Php2Html::p([
+                'content' => $text.Php2Html::a([
+                    'content' => 'View',
+                    'href' => '/Ideas/Pending/Comment'
+                ])
+            ]);
+        }
+
+
+    } else {}
+
+    $content .= Php2Bs::makeAlert($color = 'info', $heading='There are items pending.', $body, $dismissible=false);
+
+}
+
+if($data['page_type'] == 'view') {
+    if($data['record']) {
+
+
+        $title = $data['record']->title;
+        $user = new M_Users();
+        $user->find($data['record']->created_by);
+        $date = new DateTime($data['record']->created_date);
+
+        if($data['is_admin'] && isset($data['pending_idea_form'])) {
+            $content .=  'This idea is currently pending. '. $data['pending_idea_form'];
+        }
+
+        if($data['is_admin'] && isset($data['pending_comments_form'])) {
+            $content .=  'This idea currently has '.$data['pending_comments'].' pending comments. '. $data['pending_comments_form'].'. You can also approve individually below.';
+        }
+
+        if($data['record']->status == 'p') {
+            $border = 'danger';
+            $footer = 'danger';
+        } else {
+            $border = 'primary';
+            $footer = 'secondary';
+        }
+
+        $content .= Php2Bs::bs_card ([
+            'class' => 'border-'.$border.' bg-light mb-1 ',
+            'header' => array (
+                'content' => $title,
+                'class' => 'font-weight-bold'
+            ),
+            'body' => array (
+                'content' => $data['record']->details,
+                'class' => 'p-2',
+            ),
+            'footer' => array (
+                'content' => 'Posted by '. $user->data()->username . ' on ' .$date->format('l, jS F, Y \a\t g:ia'),
+                'class' => 'font-italic font-weight-bold bg-'.$footer.' text-light p-2'
+            ),
+        ]);// bs_card
+
+
+        if(isset($data['comments'])) {
+            $content .= Php2Html::h([
+                'size'=> '4',
+                'content' => 'Comments'
+            ]);
+            foreach ($data['comments'] as $key => $value) {
+                if($value->status !== 'p' || $data['is_admin']) {
+                    $user = new M_Users();
+                    $user->find($value->created_by);
+                    $date = new DateTime($value->created_date);
+
+
+                    if($value->status == 'p') {
+                        $border = 'danger';
+                        $card_info['header'] = [
+                            'content' => 'Needs approval'.Php2Html::form([
+                                'id' => '',
+                                'action' => '',
+                                'method' => 'post',
+                                'class' => ' d-inline mb-2',
+                                'content' => Php2Html::button ([
+                                    'button_type' => 'submit',
+                                    'class' => 'btn btn-sm btn-primary float-right',
+                                    'content' => 'Approve',
+                                    'name' => 'approve_single_comment',
+                                    'value' => $value->id
+                                ])
+                            ]),
+                            'class' => 'p-1 bg-danger font-weight-bold text-light'
+                        ];
+                    } else {
+                        $border = 'primary';
+                        $card_info['header'] = null;
+                    }
+
+                    $card_info['class'] = 'border-'.$border.' bg-light mb-1 ';
+
+                    $card_info['body'] = [
+                        'content' => $value->details.'<hr>'.$user->data()->username . ' on ' .$date->format('l, jS F, Y \a\t g:ia'),
+                        'class' => 'p-2',
+                    ];
+
+                    $content .= Php2Bs::bs_card ($card_info);// bs_card
+                }
+            }
+        }
+
+        $content .= $data['comment_form'];
+    }
+
+
+}
+
+if($data['page_type'] == 'overview') {
+    if($data['is_admin']) {
+        if ($data['pending_ideas'] || $data['pending_comments']) {
+
+            $body = '';
+
+            if($data['pending_ideas']) {
+
+                $text = ($data['pending_ideas'] > 1) ? 'There are currently ' . $data['pending_ideas'] . ' ideas pending. ' :
+                'There is currently ' . $data['pending_ideas'] . ' idea pending. ';
+
+                $body .= Php2Html::p([
+                    'content' => $text.Php2Html::a([
+                        'content' => 'View',
+                        'href' => '/Ideas/Pending/Idea'
+                    ])
+                ]);
+            }
+
+            if($data['pending_comments']) {
+
+                $text = ($data['pending_comments'] > 1) ? 'There are currently ' . $data['pending_comments'] . ' comments pending. ' :
+                'There is currently ' . $data['pending_comments'] . ' comment pending. ';
+
+                $body .= Php2Html::p([
+                    'content' => $text.Php2Html::a([
+                        'content' => 'View',
+                        'href' => '/Ideas/Pending/Comment'
+                    ])
+                ]);
+            }
+
+            $content .= Php2Bs::makeAlert($color = 'info', $heading='There are items pending.', $body, $dismissible=false);
+        }
+    }
+
+    $list = '';
+
+    foreach ($data['list'] as $key => $value) {
+
+        $date = new DateTime($value->created_date);
+        $user = new M_Users();
+        $user->find($value->created_by);
+        if($value->category == '-1') {
+            $cat_name = 'Other';
+        } else {
+            $model->findCats($value->category);
+
+            $cat_name = $model->data()->category_name;
+        }
+
+        switch ($value->status) {
+            case 'o':
+                $status = 'Open';
+                break;
+            case 'c':
+                $status = 'Closed';
+                break;
+            case 'i':
+                $status = 'In Progress';
+                break;
+            case 'p':
+                $status = 'Pending';
+                break;
+            default:
+                # code...
+                break;
+        }
+
+
+        $show_category = Php2Html::i(['content' => '', 'class' => 'far fa-folder-open mr-2']).
+        Php2Html::span(['content' => $cat_name, 'class' => 'border-secondary border-right mr-2 pr-2']);
+
+        $show_status = Php2Html::i(['content' => '', 'class' => 'fas fa-battery-half mx-2']).
+        Php2Html::span(['content' => $status, 'class' => 'border-secondary border-right mr-2 pr-2']);
+
+        $show_comments = Php2Html::i(['content' => '', 'class' => 'fas fa-comments mx-2']).
+        Php2Html::span(['content' => count($model->listingComments($value->id))]);
+
+        $details_row = Php2Bs::bs_column ([
+            'content' => $value->details,
+            'class' => 'text-truncate',
+            'style' => 'height:20px;'
+        ]).
+        '<hr>'.
+        $show_category.
+        $show_status.
+        $show_comments.
+        Php2Html::a(['class'=>'float-right','content' => 'View', 'href'=>'/Ideas/Details/'.$value->id]);
+
+        if($value->status == 'p') {
+            $border = 'danger';
+            $footer = 'danger';
+        } else {
+            $border = 'primary';
+            $footer = 'secondary';
+        }
+
+        if($value->status !== 'p' || $data['is_admin']) {
+            $content .= Php2Bs::bs_card ([
+                'class' => 'border-'.$border.' bg-light mb-1 ',
+                'header' => array (
+                    'content' => Php2Html::a(['content' => $value->title, 'href'=>'/Ideas/Details/'.$value->id]),
+                    'class' => 'font-weight-bold'
+                ),
+                'body' => array (
+                    'content' => $details_row,
+                    'class' => 'p-2',
+                ),
+                'footer' => array (
+                    'content' => 'Posted by '. $user->data()->username . ' on ' .$date->format('l, jS F, Y \a\t g:ia'),
+                    'class' => 'font-italic font-weight-bold bg-'.$footer.' text-light p-2'
+                ),
+            ]);// bs_card
+        }
+    }
+
+
+} // $data->page_type == 'overview'
+
+
+// Pass the details to the template
+$template = new T_Main ($content,$params);
+?>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<?php
+
+/**
+ * Faults View
+ *
+ * There is full commenting on how the views are structured and
+ * all of the parameters that can be passed used in app/views/home/index.
+ *
+ * As a result, this file only comments or includes anything that is
+ * different from that file.
+ *
+ * @package 	Core
+ * @author  	Steve Ball <steve@follyball.co.uk>
+ * @copyright 	Copyright (c) 2018 Steve Ball <steve@follyball.co.uk>
+ * @example 	http://yoursite/Faults/
+ *
+ */
+
+
+//nicePrint_r($data);
+//nicePrint_r($_POST);
+
+//Set the parameters for the page
+$params['layout'] = 'full-width';
+$params['page_title'] = (isset($data['page_name'])) ? $data['page_name'] : null;
+$params['page_subtitle'] = (isset($data['page_subtitle'])) ? $data['page_subtitle'] : null;
+$params['meta'] = ['description' => 'Description set in page'];
+$params['js'] = [
+    'remote/ckeditor',
+    #'path/to/js2',
+    #'path/to/js3'
+];
+$content = '';
+
+// Show any messages that have been sent ot the page as an alert
+$content .= showPageAlerts ($data);
+
+# Show the required data based on passed in page type
+
+
+
+# TODO Better overview page
+
+if($data['page_type'] == 'admin') {
+
+    if(isset($data['list'])) {
+        foreach ($data['list'] as $key => $value) {
+            $created_date = new DateTime($value->created_date);
+            $data['list'][$key]->created_date = $created_date->format('d/m/Y g:ia');
+
+
+
+            $data['list'][$key]->details = Php2Html::a ([
+                'content' => substr($data['list'][$key]->details, 0, 60).'...',
+                'href' => '/OneThing/Admin/'.$data['list'][$key]->id
+            ]);
+
+            if($data['list'][$key]->viewed == '0') {
+                $data['list'][$key]->viewed =Php2Html::span ([
+                    'content' => 'No',
+                    'class' => 'font-weight-bold text-danger'
+                ]);
+
+            } else {
+                $data['list'][$key]->viewed =Php2Html::span ([
+                    'content' => 'Yes',
+                    'class' => 'font-weight-bold text-success'
+                ]);
+            }
+
+        }
+
+        $table = Php2Html::make_table ([
+            'columns' => [
+                'details' => [
+                    'alias' => 'Content',
+                    'th_class' => 'bg-dark text-light',
+                ],
+                'created_date' => [
+                    'alias' => 'Created Date',
+                    'th_class' => 'bg-dark text-light ',
+                    'td_class' => 'text-info',
+                    'global_class' => 'd-none d-md-table-cell'
+                ],
+                'viewed' => [
+                    'alias' => 'Viewed',
+                    'th_class' => 'bg-dark text-light',
+                ],
+
+            ],
+            // The listing is an object so convert it to an array
+            'data' => objectToArray($data['list']),
+            'settings' => [
+                'show_header' => true,
+                //'border' =>'1',
+                'class' =>'table mb-0'
+            ]
+        ]); // make table()
+
+        $content .= Php2Bs::bs_card ([
+            'class' => 'border-primary bg-secondary mb-1',
+            'body' => [
+                'class' => 'bg-light',
+                'content' => $table,
+            ],
+        ]);// bs_card
+    }
+
+    if(isset($data['record'])) {
+        $date = new DateTime($data['record']->created_date);
+
+        $content .= $date->format('l, jS F, Y \a\t g:ia');
+
+        if($data['record']->viewed == '0') {
+            $text = 'Not Viewed';
+            $class = 'text-danger';
+        } else {
+            $text = 'Viewed';
+            $class = 'text-success';
+        }
+        $content .= Php2Html::span ([
+            'content' => $text,
+            'class' => 'float-right ' . $class
+        ]);
+        $content .= '<hr>';
+        $content .= $data['record']->details;
+
+        $content .= '<hr>';
+
+        if($data['record']->viewed == '0') {
+            $content .= Php2Html::a ([
+                'class' => 'btn btn-block btn-success mb-2',
+                'content' => 'Mark as viewed',
+                'href' => '/OneThing/Admin/'.$data['record']->id.'/MarkViewed'
+            ]);
+        }
+    }
+
+}
+
+if($data['page_type'] == 'overview') {
+
+
+
+    $content .=  Php2Html::p([
+        'content' => 'What\'s your one thing? One thing text and description. If you want to submit a new one '.Php2Bs::bs_nav_link ([
+            'content' => 'Click Here',
+            'href' => '#',
+            'id' => 'left',
+            'class' => 'd-inline pr-0',
+            'data_attr' => [
+                'toggle' => 'collapse',
+                'target' => '#add_one_thing'
+            ],
+            'aria' => [
+                'controls' => 'add_one_thing',
+                'expanded' => 'false',
+                'label' => 'Toggle user One Thing form'
+            ]
+        ]).'.'
+    ]);
+
+    $container_content = '';
+    if(!$data['logged_in']) {
+        $container_content .=  Php2Html::p([
+            'content' => 'Note that your \'One Thing\' will be submitted anonymously. If you would like personal feedback, please login.'
+        ]);
+    }
+    $container_content .= Php2Bs::bs_card ([
+        'class' => 'border-primary bg-secondary mb-1',
+        'body' => [
+            'class' => 'bg-light',
+            'content' => $data['form'],
+        ],
+    ]);// bs_card
+
+    $content .= Php2Bs::bs_container ([
+        'container_type' => 'fluid',
+        'content' => Php2Bs::bs_container ([
+            'content' => $container_content,
+        ]),
+        'class' => 'collapse py-2 bg-light text-dark border-bottom border-dark',
+        'id' => 'add_one_thing'
+    ]);
+
+    if(isset($data['list'])) {
+        foreach ($data['list'] as $key => $value) {
+
+
+
+            $created_date = new DateTime($value->created_date);
+            $data['list'][$key]->created_date = $created_date->format('d/m/Y g:ia');
+
+
+            $content .= Php2Bs::bs_card ([
+                'class' => 'border-secondary bg-light mb-1 ',
+                'body' => array (
+                    'content' => $value->details,
+                    'class' => 'p-2',
+                ),
+                'footer' => array (
+                    'content' => 'Submitted on ' .$created_date->format('l, jS F, Y \a\t g:ia'),
+                    'class' => 'font-italic font-weight-bold bg-secondary text-light p-2'
+                ),
+            ]);// bs_card
+
+        }
+
+    }
+
+
+
+
+} // $data->page_type == 'overview'
+
+
+// Pass the details to the template
+$template = new T_Main ($content,$params);
+?>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<?php
+
+/**
+ * 404 view
+ *
+ * This only controls the view from the home page of the site.
+ *
+ * No formatting is carried out anywhere and all that is passed in is an
+ * array. The entire layout is styled within this file.
+ *
+ * @package 	Core
+ * @author  	Steve Ball <steve@follyball.co.uk>
+ * @copyright 	Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
+ * @example 	/app/controllers/home.php->index()
+ * @link 		http://site.com/
+ *
+ */
+
+$params['layout'] = 'right-col';
+$params['page_title'] = '404';
+$params['page_subtitle'] = 'The file could not be found';
+
+/**
+ * Start the output string that will be passed to the template
+ * @var string
+ */
+$content = '';
+
+
+
+
+$content .= Php2Bs::makeAlert($color = 'info', $heading='That page cannot be found', $body='You have either used an incorrect url or have tried to access an area that you are not authorised to view.', $dismissible=false);
+
+
+
+/**
+ * Pass the details to the template
+ *
+ * @var string 	Data to be shown
+ * @var string 	Version on template to use
+ * @var string 	Title of the page
+ */
+$template = new T_Main (
+    $content,
+    $params
+     /*,
+
+
+    $include = array (
+        'css' => array (
+            'css/local/site',
+            'css/local/admin'
+        ),
+        'js' => array (
+            'js/local/shared',
+            'js/local/default'
+        )
+    ) */
+
+);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+functions 
+
+dont forget paths
+
+
+<?php
+
+/**
+ * Global functions
+ *
+ * Functions that can be used anywhere within the site, both front end and backend
+ *
+ * @package Core
+ * @author  Steve Ball <steve@follyball.co.uk>
+ * @copyright Copyright (c) 2017 Steve Ball <steve@follyball.co.uk>
+ */
+
+
+//  Call in the seperate autoload class
+include_once 'autoload_class.php';
+
+/**
+ * Sanitise html string
+ *
+ * Sanitizes html before passing to the browser or inserting into a database
+ * @param  string $string The string to sanitise
+ * @return string         Sanitised string
+ */
+function escape($string) {
+
+    return htmlentities($string, ENT_QUOTES, 'ISO-8859-15');
+} // escape
+
+/**
+ * Prettify an array
+ *
+ * Shows and array in a more easy-to-read format.
+ *
+ * @param  array        $array  The array to prettify
+ * @param  string/null  $title  Optional title to show (useful when used multiple times)
+ * @return string        Formatted array
+ */
+function nicePrint_r ($array, $title = null) {
+    echo '<pre>';
+    echo (isset($title)) ? '<h1>'.$title.'</h1>': '';
+    print_r($array);
+    echo '</pre>';
+
+} // nicePrint_r ()
+
+/**
+ * Include files into the template
+ *
+ * Reads the extra required css/js files called from a view when calling the
+ * templates and returns them based on the reference in config_files/css.php or
+ * config_files/js.php.
+ *
+ * These are only called in the template files and will be used when a view requires
+ * a one-off include of a css or js file - forexample a datepicker or WYSIWIG.
+ *
+ * @param  string   $include    Path to the and value in the config file
+ * @param  string   $type       Type of request (css/js)
+ * @return string         File includes
+ */
+function getIncludeFiles ($include, $type) {
+    if(isset($include[$type])) {
+        foreach ($include[$type] as $value) {
+            echo Globals::get($value);
+        }
+    }
+} // getIncludeFiles ()
+
+/**
+ * Slug or deslug a string
+ *
+ * Replaces all spaces in a string with underscores in forward mode and replaces
+ * all underscores with spaces in reverse mode.
+ *
+ * Example
+ *
+ * $string = 'This is a string';
+ * $newstring = slugify ($string)
+ *
+ * $newstring now equals 'This_is_a_string'
+ *
+ * $reversestring = slugify ($string, $direction = 'reverse')
+ *
+ * $reversestring now equals 'This is a string'
+ *
+ * @param  string   $string    The string to slug/deslug
+ * @param  string   $direction Optional direction
+ * @return string         Slugged/deslugged string
+ */
+function slugify ($string, $direction = 'forward') {
+	if ($direction == 'forward')
+	{
+		return str_replace(" ", "_", $string);
+	} else {
+		return str_replace("_", " ", $string);
+	}
+} // slugify ()
+
+/**
+ * Change an object to an array
+ *
+ * Takes an object and returns it as an array with exactly the same structure.
+ * @param  object    $obj    A php data object
+ * @return array             The original object as an array
+ */
+function objectToArray($obj) {
+    /*
+        We first have to check if it is actually an object that has been passed in. If it is, we then get tghe properties so we can later tell what type of object it is.
+    */
+    if (is_object($obj)) {
+        $obj = get_object_vars($obj);
+    }
+
+    /*
+        Now that we have the object properties, we need to see if it is an array.
+
+        If it is, we return it, converted to an array, using php's __FUNCTION__ magic constant.
+
+        If it is not an array, we simply return the object as it is.
+    */
+    if (is_array($obj)) {
+        return array_map(__FUNCTION__, $obj);
+    } else {
+        return $obj;
+    }
+} // objectToArray()
+
+function listErrors ($errors) {
+
+    $output = '';
+
+    foreach ($errors as $key => $value) {
+        $output .= Php2Html::li(['content' => $value]);
+    }
+
+    return Php2Html::ul(['content' => $output]);
+}
+
+/**
+ * Unset posted data that matches the existing database data
+ *
+ * After a form is posted, we only want to attempt to validate
+ * and update any fields that have changed.
+ *
+ * This function takes a set of $_POST data and matches it
+ * against the table record being updated. It unsets any fields
+ * that are not different from the existing data.
+ *
+ * @param  array    $post    Form $_POST data
+ * @param  array    $records Existing database record data
+ * @return array             $_POST data that is different from existing
+ */
+function stripPostData ($post, $records) {
+    /*
+        Set an array of field names that you do not want checked. These
+        will generally be fields that do not actually have a corresponding
+        database column.
+     */
+    $ignore = [
+        'confirm_password', 'terms'
+    ];
+
+    // Loop through the posted data
+    foreach($post as $key => $value) {
+
+        /*
+            If the field is not in the $ignore list, check it against
+            the corresponding database column record. If they match,
+            unset it.
+         */
+        if(!in_array($key, $ignore)) {
+            if($post[$key] === $records->$key) {
+                unset($post[$key]);
+            }
+        }
+
+    } // foreach
+
+    // Return the remaining post data
+    return $post;
+} // stripPostData ()
+
+/**
+ * Unset unrequired rules
+ *
+ * After a form is posted, we only want to attempt to validate
+ * and update any fields that have changed.
+ *
+ * This function takes a set of $_POST data and matches it
+ * against the validation rules for the table being updated. It
+ * unsets any rules that are not required due to unchanged form
+ * field data.
+ *
+ * @param  array    $post    Form $_POST data
+ * @param  array    $_rules  Table validation rules
+ * @return array             Rules that are still required
+ */
+function stripValidateRules ($_postdata, $_rules) {
+
+    // Loop through the posted data
+    foreach($_postdata as $key => $value) {
+        // Loop through the rules
+        foreach ($_rules as $key => $value) {
+            /*
+                If the field does not exist unset the matching rule.
+             */
+            if(!isset($_postdata[$key])) {
+                unset($_rules[$key]);
+            }
+        }
+    } // foreach
+
+    return $_rules;
+} // stripValidateRules
+
+/**
+ * Show any user messages in a Bootstrap alert
+ *
+ * If ever we need to to show the user a message, such as information about a
+ * failed form post or is something they were looking for cannot be found, we
+ * show it in a Boostrap alert, after the title and breadcrumbs but before the
+ * page content.
+ *
+ * There are two ways to set the details of the message via a $_SESSION variable
+ * or passed in from the controller to the view asd $data['message']. Whichever
+ * method is used, it should contain an array of data to be used in an alert and
+ * there will be a function in each model called messages() that would contain a
+ * list of messages relevant to that model.
+
+ * For example, in the users model ('/app/models/M_Users.php') messages()
+ * function, there is a key of 'not_found', which is used when trying to view the
+ * profile of a user that does not exist.
+ *
+ * 'not_found' => [
+ *     'title' => 'User not found',
+ *     'content' => 'The User could not be found.',
+ *     'alert_color' => 'info',
+ *     'dismissible' => false,
+ * ],
+ *
+ * To set that to either a $_SESSION or $data, we would simply call messages(),
+ * passing in the key we are after, assuming this is being set from within the
+ * model.
+ *
+ * Session::put('message',$this->messages('not_found'));
+ * $data['message'] = $this->messages('not_found'));
+ *
+ * In the view, just after we create the empty $content variable, we call this
+ * function, passing in the $data sent from the controller. It first checks to
+ * see if $_SESSION['message'] exists as we actually apply the message array to
+ * this if there might be a page change between receiving the form data and
+ * displaying the message. Logging in is a good example of this as you can attempt
+ * to log in from any page, but upon failure will go to http://yoursite/Login.
+ *
+ * If $_SESSION['message'] does exists, it sets that to a variable called
+ * $show_message and unsets it from the $_SESSION.
+ *
+ * If $_SESSION does not exist, it then checks to see if $data['message'] exists.
+ * When we call this function, we pass in all of the $data passed to the view,
+ * simply because it would be a lot messier to check if it contains 'messages'
+ * each time. If $data['message'] does exist, it sets that to $show_message and
+ * unsets it.
+ *
+ * Now we are the the point where if there is a message to show, $show_message
+ * will contain an array of the message details, so we pass it into the alert()
+ * function in '/app/core/Messages.php' which will return a fully formed
+ * Bootstrap alert.
+ *
+ * @param   array   $data   Data passed to the view
+ * @return  string/null     Bootstrap alert if required
+ * @example                 All files in '/app/views'
+*/
+function showPageAlerts ($data) {
+
+    //nicePrint_r($data, 'showPageAlerts()');
+    // Create a null version of the variable that we will use
+    $show_message = null;
+
+    /*
+        Firstly, we check to see if there is a message stored in $_SESSION. If there is, we overwrite $show_message with it and then unset it.
+
+        If there is no message in $_SESSION, we then see if one has been passed in as part of the data sent to the view and if so, again set it to $show_message and unset it.
+
+        For each of these, we also check to see if errors or an insert id is set, as we use them along with some messages.
+
+    */
+    if(Session::exists('message')) {
+        /*
+            $_SESSION['message'] exists so use that as our message and unset it.
+        */
+        $show_message = Session::get('message');
+        Session::delete('message');
+
+        $show_errors = (Session::exists('errors')) ? Session::get('errors') : null;
+        $show_insert_id = (Session::exists('insert_id')) ? Session::get('insert_id') : null;
+
+    } else if (isset($data['message'])) {
+        /*
+            $_SESSION['message'] does not exist but $data['message'] does, so use that as our message and unset it.
+        */
+        $show_message = $data['message'];
+        unset($data['message']);
+
+        $show_errors = (isset($data['errors'])) ? $data['errors'] : null;
+        $show_insert_id = (isset($data['insert_id'])) ? $data['insert_id'] : null;
+    }
+
+    /*
+        We now have the message to be shown set to $show_message but there are a couple of placeholders this may contain.
+
+        {{errors}} will be replaced by any validation errors passed through
+        {{insert_id}} will be replaced by any id of the record inserted into the database
+
+        Both of these get replaced by the $show_errors (in a function to make a <ul> out of them) and $show_insert_id, variables created above.
+     */
+    if(isset($show_errors)) {
+        $show_message = str_replace('{{errors}}', listErrors($show_errors), $show_message);
+    }
+
+    if(isset($show_insert_id)) {
+        $show_message = str_replace('{{insert_id}}', $show_insert_id,  $show_message);
+    }
+
+    /*
+        If $show_message now contains anything, it gets passed to the alert() function in '/app/core/Messages.php' amd return the alert. If it is empty, we just return null.
+    */
+    return ($show_message) ? Messages::alert ($show_message) : null;
+
+} // showPageAlerts ()
+
+function breadcrumbs($sep = '', $home = 'Home') {
+    $bc      = '<nav aria-label="breadcrumb" class="mb-1 " role="navigation">';
+    $bc     .=   '<ol class="breadcrumb  py-0 px-2 mb-2">';
+    //Get the server http address
+    $site   =   'http://'.$_SERVER['HTTP_HOST'];
+    //Get all vars en skip the empty ones
+    $crumbs =   array_filter( explode("/",$_SERVER["REQUEST_URI"]) );
+    if(count($crumbs)){
+        //Create the homepage breadcrumb
+        $bc    .=   '<li class="breadcrumb-item"><a href="'.$site.'">'.$home.'</a>'.$sep.'</li>';
+        //Count all not empty breadcrumbs
+        $nm     =   count($crumbs);
+        $i      =   1;
+        //Loop through the crumbs
+        foreach($crumbs as $crumb){
+            //grab the last crumb
+            $last_piece = end($crumbs);
+            //Make the link look nice
+            $link    =  ucfirst( str_replace( array(".php","-","_"), array(""," "," ") ,$crumb) );
+            //Loose the last seperator
+            $sep     =  $i==$nm?'':$sep;
+            //Add crumbs to the root
+            $site   .=  '/'.$crumb;
+            //Check if last crumb
+            if ($last_piece!==$crumb){
+            //Make the next crumb
+            $bc     .= '<li class="breadcrumb-item"><a href="'.$site.'">'.$link.'</a>'.$sep.'</li>';
+            } else {
+            //Last crumb, do not make it a link
+            $bc     .= '<li class="breadcrumb-item active">'.ucfirst( str_replace( array(".php","-","_"), array(""," "," ") ,$last_piece)).'</li>';
+            }
+            $i++;
+        }
+        $bc .=  '</ol>';
+        $bc .= '</nav>';
+        //Return the result
+        return $bc;
+    }
+}
+
+
+/*
+public static function breadcrumb ($array)
+{
+
+    $home = (isset($array['site'])) ? '/' . $array['site'] : '/';
+    $output = '<nav aria-label="breadcrumb" class="mb-1 " role="navigation">';
+    $output .= '<ol class="breadcrumb m-0 p-1">';
+
+    $output .= '<li class="breadcrumb-item"><a href="'.$home.'">Home</a></li>';
+
+    if(isset($array['path']))
+    {
+        foreach ($array['path'] as $key => $value) {
+            $output .= '<li class="breadcrumb-item"><a href="'.$home.$key.'">'.$value.'</a></li>';
+        }
+    }
+
+    $output .= '<li class="breadcrumb-item active" aria-current="page">'.$array['current'].'</li>';
+
+    $output .= '</ol>';
+    $output .= '</nav>';
+
+    return $output . self::htmlComment('breadcrumb');
+}
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
