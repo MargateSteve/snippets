@@ -1,0 +1,20 @@
+$ph = $this->_db_data->query('
+            SELECT
+            T.title,
+            CASE WHEN PH.`gender` = "m" THEN mName.forename ELSE fName.forename END as `forename`,
+            lName.`surname`,
+            CASE WHEN PH.`gender` = "m" THEN "male" ELSE "female" END as `gender`,
+            PH.dob,
+            PH.home_phone,
+            PH.mobile_phone,
+            A.postcode,
+            A.first_line,
+            A.town
+            FROM `sel_ph` PH
+            LEFT JOIN `data_people_surnames` lName ON PH.`surname` = lName.`id`
+            LEFT JOIN `data_people_male_names` mName ON PH.`forename` = mName.id
+            LEFT JOIN `data_people_female_names` fName ON PH.`forename` = fName.id
+            LEFT JOIN `data_people_titles` T ON PH.`title` = T.id
+            LEFT JOIN `data_people_addresses` A ON PH.`home_address` = A.id
+            WHERE `batch` ='.$batch
+        );
