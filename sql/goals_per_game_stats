@@ -1,0 +1,22 @@
+SELECT c.club_name AS Tm,
+	c.club_id AS Tid,
+	SUM(CASE WHEN f.ht_id = c.club_id AND h90 IS NOT NULL THEN 1 ELSE 0 END) AS HGP,
+	COALESCE(SUM(CASE WHEN f.ht_id = c.club_id THEN f.h90 END), 0) AS HGF,
+	COALESCE(SUM(CASE WHEN f.ht_id = c.club_id THEN f.a90 END), 0) AS HGA,
+	COALESCE(SUM(CASE WHEN f.ht_id = c.club_id THEN f.h90 END) - SUM(CASE WHEN f.ht_id = c.club_id THEN f.a90 END), 0) AS HGD,
+	SUM(CASE WHEN f.at_id = c.club_id AND h90 IS NOT NULL THEN 1 ELSE 0 END) AS AGP,
+	COALESCE(SUM(CASE WHEN f.at_id = c.club_id THEN f.a90 END), 0) AS AGF,
+	COALESCE(SUM(CASE WHEN f.at_id = c.club_id THEN f.h90 END), 0) AS AGA,
+	COALESCE(SUM(CASE WHEN f.at_id = c.club_id THEN f.a90 END) - SUM(CASE WHEN f.at_id = c.club_id THEN f.h90 END), 0) AS AGD,
+	SUM(CASE WHEN (f.ht_id = c.club_id) OR (f.at_id = c.club_id) THEN 1 ELSE 0 END) AS GP,
+	COALESCE(SUM(CASE WHEN f.ht_id = c.club_id THEN f.h90 WHEN f.at_id = c.club_id THEN f.a90 END), 0) AS GF,
+	sum(CASE WHEN f.ht_id = c.club_id THEN f.h90 WHEN f.at_id = c.club_id THEN f.a90 END) / sum(CASE WHEN (f.ht_id = c.club_id) OR (f.at_id = c.club_id) THEN 1 ELSE 0 END) AS GFPG,
+	COALESCE(SUM(CASE WHEN f.ht_id = c.club_id THEN f.a90 WHEN f.at_id = c.club_id THEN f.h90 END), 0) AS GA,
+	sum(CASE WHEN f.ht_id = c.club_id THEN f.a90 WHEN f.at_id = c.club_id THEN f.h90 END) / sum(CASE WHEN (f.ht_id = c.club_id) OR (f.at_id = c.club_id) THEN 1 ELSE 0 END) AS GAPG,
+	COALESCE(SUM(CASE WHEN f.ht_id = c.club_id THEN f.h90 WHEN f.at_id = c.club_id THEN f.a90 END) - SUM(CASE WHEN f.ht_id = c.club_id THEN f.a90 WHEN f.at_id = c.club_id THEN f.h90 END), 0) AS GD,
+	COALESCE(SUM(CASE WHEN f.ht_id = c.club_id THEN f.h90 WHEN f.at_id = c.club_id THEN f.a90 END) - SUM(CASE WHEN f.ht_id = c.club_id THEN f.a90 WHEN f.at_id = c.club_id THEN f.h90 END), 0) / sum(CASE WHEN f.ht_id = c.club_id THEN f.a90 WHEN f.at_id = c.club_id THEN f.h90 END) AS GDPG
+FROM clubs c
+LEFT JOIN fixture f ON c.club_id IN (f.ht_id, f.at_id)
+WHERE f.season = '2017-18' AND f.comp = 11 AND f.playoff IS NULL AND f.`status` = 'FT'
+GROUP BY c.club_id
+ORDER BY c.club_name ASC
